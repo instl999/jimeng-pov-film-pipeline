@@ -1,0 +1,22 @@
+subject_definitions:
+<Subject 1> is the person in <Picture 1>: a bank teller of about twenty-five, slim, with black hair in a low ponytail and a thin fringe, a white shirt buttoned to the collar and a navy uniform vest. <Picture 1> is a character sheet showing the same person in several views on a plain background; take the face, hair and clothing from it, not the pose or the background.
+<Subject 2> is the person in <Picture 2>: a woman of about twenty-six with shoulder-length straight black hair parted in the middle, a bright red knitted scarf and a cream wool coat. <Picture 2> is a character sheet showing the same person in several views on a plain background; take the face, hair and clothing from it, not the pose or the background.
+<Subject 3> is the location in <Picture 3>: the ground-floor hall of a 1990s Chinese securities office in winter, a long pale-grey counter with a glass partition and a half-round pass-through, dark wooden filing cabinets behind it, pale green dado on white walls, cold fluorescent light.
+
+summary:
+[reference generation] A single first-person shot at the counter of a securities office in 2001: the protagonist's hand rests on a dark red passbook, <Subject 1> looks up and asks him to confirm, he answers from behind the camera, and <Subject 2> at his right turns to him in disbelief.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - the face, hair and clothing are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - the face, hair and clothing are retained.
+<Subject 3> (appears in [Shot 1]): partially_preserved - the layout, furnishings, materials and light are retained; the framing is new and the people in the shot are added.
+
+detailed_description:
+Photorealistic period footage with the look of fine-grained 35mm colour negative, desaturated grey-blue and teal, cool shadows, low contrast, soft overcast window light from one side. The whole clip is one continuous first-person shot with no cuts: the camera is the protagonist's own eyes at eye height, a wide field of view with slight natural head movement. His face and body never appear; only his two hands enter the frame from the bottom edge: a thirty-year-old man's hands with short nails, the frayed whitened cuffs of an old navy cotton jacket, bare wrists.
+[Shot 1] The view starts tilted slightly down at the pale-grey counter of <Subject 3>. The protagonist's right hand lies flat, fingers spread, on a small dark red passbook with worn corners and a plain cover, just in front of the half-round pass-through in the glass. Beyond the glass sits <Subject 1> (S1), the teller in the navy vest, a ballpoint pen stopped on a blank slip. The camera tilts up slowly and smoothly from the hand to her face, ending in a chest-up framing through the glass. She lifts her eyes from the slip to the lens, her eyebrows rising a little, her mouth still closed for half a second, and then she asks in a flat, professional young female voice, <d>[Chinese] 确定？</d> She closes her lips and keeps looking into the lens, the pen still held above the paper. The protagonist (S2), unseen behind the camera, answers in an off-screen low, flat, slow male voice of about thirty, <d>[Chinese] 确定。</d> The teller's lips stay closed while he speaks. As he says it the view pans right at walking-head speed, about forty degrees, past the metal edge of the glass partition, to <Subject 2>, the woman in the red scarf and cream coat standing at his right shoulder about sixty centimetres away, chest-up, in sharp focus. The last trace of a smile is still on her mouth, but her eyes have already widened and her brows draw together; both her hands grip the navy sleeve of his right forearm at the bottom right of the frame, the knuckles pale. She does not speak. The pan settles on her face and holds, with a small natural sway of the head. Behind her the green dado and a row of green plastic chairs are out of focus; nobody else looks at the camera.
+
+overall_soundscape:
+The low murmur of a half-empty hall, a telephone ringing once far off and stopping, the faint buzz of fluorescent tubes, the soft slap of a palm settling on the counter at the start.
+
+non_diegetic_music:
+N/A

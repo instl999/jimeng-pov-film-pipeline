@@ -1,0 +1,38 @@
+# Only the pipeline, its docs and the worked example are published.
+# Everything else in this folder (films in progress, media, private notes) stays local.
+/*
+!/.gitignore
+!/README.md
+!/AGENTS.md
+!/series/
+!/examples/
+
+/series/*
+!/series/FORMAT.md
+!/series/FILM.md
+!/series/tools/
+!/series/topic-template/
+!/series/sfx/
+!/series/h3-test/
+/series/sfx/*
+!/series/sfx/README.md
+/series/h3-test/*.mp4
+/series/tools/sample/
+/series/tools/sample-full/
+
+/examples/*/post/
+/examples/*/.film/
+/examples/*/.jimeng/
+/examples/*/out/E01/
+/examples/*/out/*.mp4
+
+__pycache__/
+*.pyc
+.DS_Store
+
+# older helpers the runner no longer uses; kept locally only
+/series/tools/queue_shots.py
+/series/tools/plan_from_animatic.py
+/series/tools/import_shotfile.py
+/series/tools/build_animatic.py
+/series/tools/check_lines.py
