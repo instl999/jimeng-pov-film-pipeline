@@ -24,7 +24,8 @@ LEAD_NAMES = ("男主", "女主", "主角", "主人公")
 ROLES = ("父母 父亲 母亲 爸爸 妈妈 兄弟 哥们儿 哥们 姐妹 闺蜜 妻子 老婆 丈夫 老公 前女友 女朋友 女友 前男友 男朋友 男友 "
          "朋友 同学 同事 邻居 儿子 女儿 孙子 孙女 亲戚 老板 经理 服务员 柜员 店员 司机 秘书 助理 美女 帅哥 保安 医生 "
          "护士 老师 记者 客户 路人 房东 领导").split()
-GROUPS = ("父母", "亲戚", "同学", "美女", "老板", "路人", "同事", "朋友")      # one word, maybe several people
+GROUPS = ("父母",)                                  # one word, two people: a line needs one of them
+MANY = ("几个", "一群", "一帮", "们", "众人", "大家", "都")  # the clause speaks of several people
 FILLER = ("随后", "然后", "接着", "这时", "这时候", "最后", "于是", "同时")
 DESCRIBES = ("画面", "场景", "镜头", "环境", "背景", "地点", "时间")      # a label for description, not a speaker
 TEXT_ONLY = ("字幕", "旁白", "大字", "屏幕上")                            # words shown on screen, nobody says them
@@ -76,12 +77,28 @@ def person(clause, names):
             rest = t[len(lead):].lstrip("的")
             role = next((n for n in names if rest.startswith(n)), None)
             if role:
-                return role, role not in GROUPS, rest[len(role):]
+                return role, role not in GROUPS and not any(m in rest.replace(role, "") for m in MANY), rest[len(role):]
             return LEAD, True, rest
     role = next((n for n in names if t.startswith(n)), None)
     if role:
-        return role, role not in GROUPS, t[len(role):]
+        return role, role not in GROUPS and not any(m in t.replace(role, "") for m in MANY), t[len(role):]
     return None
+
+
+def spoken_part(parts, names):
+    """Speech at the end of a script line may be followed by more stage direction with no colon:
+    「先放着。同学摇摇头，回自己座位继续打游戏。」 The speech ends where a later sentence starts with
+    a person doing something. A person followed by a comma is being spoken to, and stays speech."""
+    start = 0
+    for j, clause in enumerate(parts):
+        if j and start == j:                            # first clause of a sentence after the first
+            t = bare(clause)
+            hit = person(clause, names) or next(((n, True, t[len(n):]) for n in LEAD_NAMES if t.startswith(n)), None)
+            if hit and hit[2] and not clause.strip().endswith(("，", ",", "！", "!", "？", "?")) or (hit and hit[2] and len(hit[2]) >= 2 and hit[2][0] not in "，,！!？?、"):
+                return parts[:j], parts[j:]
+        if clause.rstrip().endswith(tuple(END)):
+            start = j + 1
+    return parts, []
 
 
 def speaker_of(parts, names):
@@ -154,7 +171,7 @@ def lines_of(raw, names):
             k, _, _ = speaker_of(parts, names)
             speech, narrative = parts[:k], parts[k:]
         else:
-            speech, narrative = parts, []
+            speech, narrative = spoken_part(parts, names)
         said = "".join(speech).strip().rstrip("，,；;")
         if any(ch.isalnum() for ch in said):
             out.append([who + ("" if sure and who else "?"), said])

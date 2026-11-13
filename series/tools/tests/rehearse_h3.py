@@ -66,10 +66,10 @@ film = {"title": "rehearsal", "episode": "E01", "premise": ["排练", "不花钱
         "hands": {"2001": "三十岁男性的双手；深蓝色旧棉夹克的袖口。"},
         "hands_en": {"2001": "a thirty-year-old man's hands, short nails, the frayed cuffs of an old navy cotton jacket, bare wrists."},
         "lead_voice": "三十岁男声，低平，慢", "props": {},
-        "people": {"小红": {"images": {"默认": cast["小红"]}, "en": "a woman of about twenty-six with shoulder-length black hair, a red knitted scarf and a cream wool coat."},
+        "people": {"小红": {"images": {"默认": cast["小红"]}, "body": "二十六岁左右的女性，披肩黑发，正红色围巾，米白呢大衣。", "voice": "年轻女声，轻", "en": "a woman of about twenty-six with shoulder-length black hair, a red knitted scarf and a cream wool coat."},
                    "柜员": {"images": {"默认": cast["柜员"]}, "en": "a bank teller of about twenty-five with a low ponytail, a white shirt and a navy uniform vest."}},
         "places": {"证券营业部柜台": {"master": "日·竖·柜台", "views": {"日·竖·柜台": {"image": cast["证券营业部柜台"]}}, "sound": "<大厅里低低的人声>",
-                                 "block": ["空间：" + filler * 4], "en": "the ground-floor hall of a 1990s securities office with a long counter behind glass.",
+                                 "block": ["空间：" + filler * 4, "光：" + filler, "背景里的人：" + filler], "en": "the ground-floor hall of a 1990s securities office with a long counter behind glass.",
                                  "sound_en": "Low murmur of a half-empty hall, a phone ringing far off and stopping."}},
         "line_exceptions": [], "scenes": [{"id": "P01", "title": "画面一", "date": "第一天", "place": "证券营业部柜台", "style": "default",
                                            "hands": "2001", "when": "2001年冬天上午，室内", "tone": "冷调，克制。",
@@ -112,6 +112,14 @@ try:
     check("no sign-off, no generation", rc != 0 and "signed off" in out and not os.path.exists(log), out[-200:])
     rc, out = run("approve", proj, "rehearsal sign-off")
     check("sign-off recorded", rc == 0, out[-200:])
+    if where.skill():                                    # writing an image prompt needs the jimeng-drama skill's templates
+        held = os.path.join(proj, cast["小红"])           # a planned image that has not been made yet
+        os.rename(held, held + ".away")
+        rc, out = run("check", proj)
+        check("a reference image still to be made does not fail the check", rc == 0 and "still to be made" in out, out[-300:])
+        rc, out = run("draft", proj, "--run")
+        check("but no shot is generated until it exists", rc != 0 and "still to be made" in out and not os.path.exists(log), out[-300:])
+        os.rename(held + ".away", held)
     rc, out = run("draft", proj)
     check("dry run lists two shots and rents nothing", rc == 0 and "S01" in out and "S02" in out and not os.path.exists(log), out[-300:])
     rc, out = run("budget", proj)

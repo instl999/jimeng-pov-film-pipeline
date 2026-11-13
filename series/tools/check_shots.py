@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gate for an episode's shot file: nothing is generated from a file that fails this.
 
-    python3 check_shots.py PROJECT_DIR EPISODE [--min 3000] [--exempt S02,S03] [--places NAME,NAME | --places all]
+    python3 check_shots.py PROJECT_DIR EPISODE [--min 3000] [--exempt S02,S03] [--pending FILE,FILE] [--places NAME,NAME | --places all]
 
 Checks every `## Sxx` section of PROJECT_DIR/shots/<EPISODE>.md:
 
@@ -18,6 +18,9 @@ Checks every `## Sxx` section of PROJECT_DIR/shots/<EPISODE>.md:
 
 --exempt names shots of a finished film that were written before the floor existed: they are still
 checked for everything else, and listed as kept, but their length does not fail the run.
+
+--pending names reference images that are planned but not made yet (before `film.py images --run`):
+their absence is not a failure.
 
 With --places it also counts each named place's description in cast/<place>.md (the paragraph
 before the fixed layout block) against the same floor; `--places all` lists every place and fails
@@ -73,7 +76,7 @@ def own_writing(section, fixed):
 
 def main():
     argv = sys.argv[1:]
-    takes_value = ("--min", "--places", "--exempt")
+    takes_value = ("--min", "--places", "--exempt", "--pending")
     args = [a for i, a in enumerate(argv) if not a.startswith("--") and not (i and argv[i - 1] in takes_value)]
     if len(args) != 2:
         sys.exit(__doc__)
@@ -85,6 +88,7 @@ def main():
     floor = int(opt("--min", "3000"))
     places = opt("--places")
     exempt = set((opt("--exempt") or "").split(",")) - {""}
+    pending = set((opt("--pending") or "").split(",")) - {""}
     text = open(os.path.join(project, "shots", episode + ".md"), encoding="utf-8").read()
     fixed = [NO_MUSIC, POV] + POV_TAILS + hands(project) + TAILS
 
@@ -124,7 +128,7 @@ def main():
         if used - declared:
             notes.append("no reference line for %s" % "、".join(sorted(used - declared)))
         for alias, path in refs:
-            if alias not in ("预演", "前段尾帧") and not os.path.isfile(os.path.join(project, path)):   # the last frame is made during the run
+            if alias not in ("预演", "前段尾帧") and path not in pending and not os.path.isfile(os.path.join(project, path)):   # the last frame is made during the run
                 notes.append("reference file missing: %s" % path)
         lines_path = os.path.join(project, "post", "lines", sid + ".txt")
         if os.path.isfile(lines_path):

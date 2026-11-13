@@ -142,9 +142,25 @@ class Film:
                 secs = sh.get("seconds")
                 if not isinstance(secs, int) or not 5 <= secs <= 30:
                     out.append("%s: seconds must be a whole number from 5 to 30 (the owner's floor is 5)" % sid)
-                for alias in sh.get("people", {}):
+                for alias, look in sh.get("people", {}).items():
                     if alias not in d["people"]:
                         out.append("%s: %r is not in people" % (sid, alias))
+                    elif look not in d["people"][alias].get("images", {}):
+                        out.append("%s: person %s has no look %r in its images" % (sid, alias, look))
+                for line in sh.get("lines", []):
+                    if not (isinstance(line, list) and len(line) == 2 and isinstance(line[0], str)):
+                        out.append("%s: every entry of \"lines\" is [speaker, words], for example [\"我\", \"先放着\"]" % sid)
+                if "raw" not in sh:
+                    for key in ("setup", "track", "ending"):
+                        if not sh.get(key):
+                            out.append("%s: no \"%s\"" % (sid, key))
+                    if sc.get("style") not in d.get("styles", {}):
+                        out.append("%s: the scene's style %r is not in styles" % (sid, sc.get("style")))
+                    if sh.get("hands_visible", True) and sc.get("hands") not in d.get("hands", {}):
+                        out.append("%s: the scene's hands %r is not in hands (or set \"hands_visible\": false on the shot)" % (sid, sc.get("hands")))
+                    for key in ("when", "tone", "date"):
+                        if key not in sc:
+                            out.append("%s: the scene has no \"%s\"" % (sid, key))
                 if "raw" not in sh:
                     stages = sh.get("stages", [])
                     if not stages:
@@ -154,8 +170,30 @@ class Film:
                 view = sh.get("view") or d["places"].get(sc.get("place"), {}).get("master")
                 if sc.get("place") in d["places"] and view not in d["places"][sc["place"]].get("views", {}):
                     out.append("%s: place view %r is not in places.%s.views" % (sid, view, sc.get("place")))
+        for key in ("premise", "notice", "styles", "hands"):
+            if not d.get(key):
+                out.append("film.json: \"%s\" is empty" % key)
+        for alias, person in d["people"].items():
+            if not person.get("images"):
+                out.append("person %s: no \"images\" (for example {\"默认\": \"cast/%s.默认.png\"})" % (alias, alias))
+            for look, path in person.get("images", {}).items():
+                if not os.path.isfile(self.path(path)):
+                    if path != "cast/%s.%s.png" % (alias, look):
+                        out.append("person %s, look %s: an image still to be made must be named cast/%s.%s.png" % (alias, look, alias, look))
+                    if not person.get("body"):
+                        out.append("person %s: its image is still to be made, so it needs a \"body\" description" % alias)
         for alias, place in d["places"].items():
+            if place.get("master") not in place.get("views", {}):
+                out.append("place %s: \"master\" must name one of its views" % alias)
+            block = place.get("block", [])
+            written_new = any("raw" not in sh for sc in d["scenes"] if sc.get("place") == alias for sh in sc.get("shots", []))
+            if written_new and not (len(block) == 3 and block[0].startswith("空间：") and block[1].startswith("光：") and block[2].startswith("背景里的人：")):
+                out.append("place %s: \"block\" must be three paragraphs starting 空间：, 光：, 背景里的人：" % alias)
+            if not place.get("sound"):
+                out.append("place %s: no \"sound\" (its continuous room sound, in angle brackets)" % alias)
             for view, spec in place.get("views", {}).items():
+                if not os.path.isfile(self.path(spec.get("image", ""))) and spec.get("image") != "cast/%s.%s.png" % (alias, view):
+                    out.append("place %s, view %s: an image still to be made must be named cast/%s.%s.png" % (alias, view, alias, view))
                 if not os.path.isfile(self.path(spec.get("image", ""))) and not spec.get("vantage"):
                     out.append("place %s, view %s: its image is still to be made, so it needs a \"vantage\" (where my eyes are and what they face)" % (alias, view))
         if self.engine == "h3" and not out:
@@ -318,6 +356,9 @@ def cmd_check(film):
     legacy = [sh["id"] for _, sh, _ in film.shots() if "raw" in sh] if film.d.get("accepted") else []
     if legacy:                                          # a finished film keeps the shots written before the floor
         args += ["--exempt", ",".join(legacy)]
+    to_make = [path for _, _, _, path, _ in missing_images(film)]
+    if to_make:                                         # planned images are not there before `images --run`
+        args += ["--pending", ",".join(to_make)]
     rc = subprocess.run(args).returncode
     if film.engine == "h3":                             # the 8,000 rule counts the Chinese layer and the H3 prompt together
         import h3
@@ -337,7 +378,9 @@ def cmd_check(film):
     print("shots run %d to %d s, %.1f s on average (the rule: 5 or more, about 10 on average)"
           % (min(lengths), max(lengths), sum(lengths) / float(len(lengths))))
     if legacy:
-        print("note: this film is finished; %d shot(s) written before the 3,000 rule are kept as they are" % len(legacy))
+        print("note: %d older shot(s) of this finished film are exempt from the length floor (written before it existed)" % len(legacy))
+    if to_make:
+        print("note: %d reference image(s) are still to be made (after sign-off: film.py images --run)" % len(to_make))
     src = film.d.get("source")
     if src and os.path.isfile(film.path(src)):
         script = "".join(ch for ch in open(film.path(src), encoding="utf-8").read() if ch.isalnum())
@@ -369,6 +412,9 @@ def script_lines_kept(film, script_text):
             want = "".join(ch for ch in changes.get((sc["id"], k), said) if ch.isalnum())
             if want not in have:
                 print("%s: line %d of the script is not in this scene's shots as written: %s%s" % (sc["id"], k, said, "" if (sc["id"], k) not in changes else " (changed to: %s)" % changes[(sc["id"], k)]))
+                if (sc["id"], k) not in changes:
+                    print("    if the words above are not all speech (a stage direction got in), or you reworded a real name, add to film.json: "
+                          "\"line_changes\": [{\"scene\": \"%s\", \"line\": %d, \"now\": \"<the words actually spoken>\", \"why\": \"...\"}]" % (sc["id"], k))
                 rc = 1
     return rc
 
@@ -423,8 +469,8 @@ def cmd_budget(film):
     chosen = dict((k, c) for k, _, c in routes)[d.get("finish", DEFAULT_FINISH)] + images
     print("cap %s, spent so far %d, this route needs about %d" % (cap if cap is not None else "not set", spent, round(chosen)))
     if cap is None:
-        print("no budget set in film.json: generation will refuse to run")
-        return 1
+        print("no cap yet: put the owner's number in \"budget\" in film.json once they have given one (nothing can be generated before that)")
+        return 0
     if chosen > cap:
         print("the chosen route is over the cap")
         return 1
@@ -621,6 +667,11 @@ def cmd_draft(film, only, run, keep=False):
     todo = [sh["id"] for _, sh, _ in film.shots()
             if (sh["id"] in only if only else film.shot_state(sh["id"])["status"] not in ("drafted", "accepted"))]
     refuse_unsigned(film, run, shots=todo, images=[])
+    waiting = missing_images(film)
+    if waiting:
+        print("%d reference image(s) are still to be made; shots cannot be generated without them: film.py images PROJECT --run" % len(waiting))
+        if run:
+            return 1
     if film.engine == "h3":
         import h3
         return h3.draft(film, only, run, keep, sys.modules[__name__])
@@ -1101,13 +1152,13 @@ def cmd_intake(script_path, project):
         die("no scenes found: each scene must start on its own line with 画面一： (or 场景一：, 第一场：), then 画面二： and so on")
     scenes = []
     for n, sc in enumerate(found, 1):
-        scenes.append({"id": "P%02d" % n, "title": sc["title"], "date": sc["date"], "place": "", "style": "default", "hands": "",
+        scenes.append({"id": "P%02d" % n, "title": sc["title"], "date": sc["date"], "place": "", "style": "cold", "hands": "",
                        "when": "", "tone": "", "script": sc["script"], "lines": sc["lines"], "shots": []})
     total_chars = sum(len(re.sub(r"\W", "", said)) for sc in scenes for _, said in sc["lines"])
     seconds = estimate_seconds(total_chars, len(scenes))
     film = {"title": "", "episode": "E01", "premise": [], "notice": "AI 生成 · 虚构剧情", "script_head": head,
             "source": os.path.relpath(kept, project), "finish": DEFAULT_FINISH, "budget": None, "reroll_rate": 0.3, "floor": 3000,
-            "titles": {"premise_seconds": 7, "date_seconds": 4}, "end_card": None, "styles": {"default": "", "asset": ""},
+            "titles": {"premise_seconds": 7, "date_seconds": 4}, "end_card": None, "styles": {"cold": "", "warm": "", "asset": ""},
             "hands": {}, "lead_voice": "", "props": {}, "people": {}, "places": {}, "line_exceptions": [], "scenes": scenes}
     out = os.path.join(project, "film.json")
     if os.path.exists(out):
@@ -1200,4 +1251,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyError as err:                             # a key the film file should have; say so plainly
+        sys.exit("film: film.json is missing the key %s somewhere the runner needs it; compare with series/FILM.md and the example, "
+                 "then run `film.py check`" % err)

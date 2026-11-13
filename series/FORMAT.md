@@ -239,7 +239,7 @@ A shot in `film.json` is written in two layers and the runner joins them:
 - **The place block** (`places.<name>.block`): the space in every direction from where I stand, the light, the people in the background. It is repeated word for word in every shot set there, which is what keeps a room the same from shot to shot.
 - **The shot itself**: `setup` (who is where and in what state as it starts, the props, the camera path in one paragraph), `track` (the emotional track), `stages`, `ending`, and the `must` / `must_not` lists used when the clip is checked.
 
-Together they must reach 3,000 characters, and the shot's own layer at least 2,000, so the place block cannot carry a thin shot. A place also has `detail`, used only in its image prompt.
+Together they must reach 3,000 characters, and the shot's own layer at least 2,000, so the place block cannot carry a thin shot. The place block is exactly its three paragraphs; a place also has `detail`, used only in its image prompt, for everything else.
 
 ### A place is drawn from where I stand
 
@@ -275,15 +275,16 @@ The first image of a place (`master`) is upright, 9:16, seen from the spot and h
 
 Where this comes from: the drama skill's own references, which win wherever sources disagree, and what the first film showed.
 
-0. **The shot file comes first and every shot is written out in at least 3,000 characters. This is a hard requirement.** `shots/E01.md` is sent to the owner before anything is generated.
-   - The count is the shot's own writing: the prompt without the blocks every prompt repeats (style sentence, reference lines, the no-music sentence, the first-person sentence and hands, the last line).
-   - `python3 series/tools/check_shots.py PROJECT E0N` is the gate. It fails a shot under the floor, a shot whose stages do not add up to its length, a missing reference, and any quoted word that is not in the shot's lines. Nothing is generated from a file that fails.
+0. **The shot file comes first and every shot is written out in full. This is a hard requirement.** `shots/E01.md` is sent to the owner before anything is generated.
+   - **The length floor, stated once:** (a) a shot's whole prompt, meaning the place block plus the shot's own layer, is at least 3,000 Chinese characters; (b) the shot's own layer (`setup`, `track`, `stages`, `ending`) is at least 2,000 of them, so a long place block cannot carry a thin shot; (c) a place whose image is still to be made has at least 3,000 in `block` plus `detail`. On the H3 engine (a) is 8,000 and (b) is 5,334. `film.py check` counts all three.
+   - What is counted is your writing: the prompt without the fixed sentences the runner adds (style sentence, reference lines, the no-music sentence, the first-person sentence and hands, the last line).
+   - `film.py check` is the gate. It fails a shot under the floor, a shot whose stages do not add up to its length, a missing reference, and any quoted word that is not in the shot's lines. Nothing is generated from a film that fails.
    - What fills 3,000 characters without padding: the place in every direction from where I stand, with materials and wear; the light and where it falls; each background person and the one thing they are doing; each speaking person's state as the shot starts and what their hands are busy with; every prop with one fixed description; the camera path in one paragraph; then each stage with how the camera starts, what it follows, what changes it and where it ends, the acting beats in order, the line, and the sounds; the last frame; and the two or three things this shot must not do.
    - Tested on the first topic's opening shot: 3,275 characters against 1,515. Same price, all lines spoken, and the written-in props appeared (a pen on its string, an ink pad, a bystander who looks up). The model did not choke on the length.
-   - The same floor holds for a new place's image prompt: 3,000 characters of the place's own description before the fixed layout block (`check_shots.py --places NAME`). This overrides the drama skill's 200 to 350. A relit or upright version of an existing place reuses that place's paragraph so it still matches its master. Character sheets are not scenes and stay at the length the skill's sheet template is built for.
+   - The same floor holds for a new place's image prompt: 3,000 characters of the place's own description before the fixed layout block (`film.py check` counts `block` plus `detail`). This overrides the drama skill's 200 to 350. A relit or upright version of an existing place reuses that place's paragraph so it still matches its master. Character sheets are not scenes and stay at the length the skill's sheet template is built for.
 1. **One clip per shot in `film.json`**, in whole seconds. Do not re-cut at prompt time.
 2. **No reference video for the camera.** Tested on the first film's opening shot: with a grey-box clip of the camera move attached the take cost 140 credits, without it 90, and both takes followed the written camera path and spoke all five lines. A reference video adds about half again to the price and, with a shot written out in full, bought nothing visible. Write the camera path in words.
-3. **Say once that the clip is one take**: `全程第一人称主观视角单镜头、无剪辑；以下分镜是同一条连续镜头路径上的阶段，不是切镜。` The numbered stages can otherwise be read as cuts, and a cut to a reverse angle would show me.
+3. **The clip is one take.** The runner says so in every prompt (`全程第一人称主观视角单镜头、无剪辑；以下分镜是同一条连续镜头路径上的阶段，不是切镜。`), because numbered stages can otherwise be read as cuts, and a cut to a reverse angle would show me. Write your stages as phases of one continuous camera path, never as separate shots.
 4. **Each stage has one job and a chain of cause**: something triggers, someone reacts, a body or a prop moves, the distance or framing changes, and it ends in a result or in movement still under way. Not a list of unrelated actions, and not a held pose.
 5. **Write the camera in four parts**: how it starts (still, already moving, or carrying on from the last stage), what it follows, what makes it change, where it ends. One main move per stage, in the drama skill's own camera wording, with speed, distance and the framing at each end. "缓慢推进" alone is not enough.
 6. **A spoken line has a before, a middle and an after.** Before: one small thing (a short breath in, a hand that stops). Middle: the line, word for word, in Chinese quotation marks, whole; name the stressed word, and the breath between two sentences. After: the look is held or slides away for half a second. A long line is said in several breaths, split only at the script's own punctuation, each piece in its own quotation marks with a small action between. A word quoted only to mark stress goes in corner brackets (「务实」), never in quotation marks, or the model and the skill's counter take it for another line.
@@ -296,7 +297,7 @@ Where this comes from: the drama skill's own references, which win wherever sour
    - One line gives the clip's emotional track: `情绪轨迹：开心 → 笑容凝住 → 确认 → 质问`.
    - No muscle codes, no millimetres. A "do not" line is added only for a failure actually seen in a draft.
 8. **Continuity between shots.**
-   - The first stage restates where the last shot ended: positions, facing, posture, gaze, what my hands hold. Take it from the shot list's last-frame line.
+   - The first stage restates where the last shot ended: positions, facing, posture, gaze, what my hands hold. Take it from the previous shot's `ending`.
    - The last stage states the final second in words, so the next clip can be written to match.
    - A cut lands on a visibly different frame and sits on something I do: standing up, turning, sitting down, looking down.
    - Shots in one place share one sentence saying where everyone is, word for word. A prop keeps one description. Each person keeps their side of me and their one garment. My cuff and wrist change only when the count has moved on.
@@ -305,28 +306,36 @@ Where this comes from: the drama skill's own references, which win wherever sour
 10. **References are bound by name and bounded**: say what each one controls and what it does not. Do not describe again what the image already shows; text and image then fight. At most three people are described precisely in a clip; the rest are background doing something specific.
 11. **Timings are whole seconds**, stages follow one another with no gaps.
 12. **The person behind the lens is written 主人公, never “我” in quotation marks.** Chinese quotation marks are only for words spoken aloud.
-13. **Say there is no music at the very start**, listing the synonyms, and keep the fixed last line as well.
+13. **No music, no drawn subtitles.** The runner puts the no-music sentence at the start of every prompt and the fixed last line at the end. Do not describe music anywhere in a shot.
 14. **Keep the style sentence short.** The acting and the camera need the weight.
 15. **When a draft fails, change only the layer that failed** (camera, acting, the line, the look), not everything at once.
 16. **A place image made as a wide room view outweighs the words about where I stand.** Draw the place from my spot in the first place (see "A place is drawn from where I stand").
 
-Skeleton, in the order the skill's template requires. Replace the angle-bracket parts; keep the first and last lines' fixed wording.
+**What you write and what the runner adds.** A prompt is assembled from `film.json` in this order; you write only the parts in the right-hand column. `shots/E01.md` shows the result for every shot.
+
+| Part of the prompt | Comes from |
+|---|---|
+| `基础视觉风格：…` | `styles`, by the scene's `style` |
+| The reference lines (`{{小红}} 是角色小红的形象参考…`, `{{场景}} 是场景参考…`, the previous last frame) | written by the runner from the shot's `people`, the scene's `place`, `extra_views` and `chain` |
+| The no-music sentence; `本片段场景设定在：{{场景}}。…；<环境声>。整体电影感基调：…` | the scene's `when` and `tone`, the place's `sound` |
+| The place: `空间：…` `光：…` `背景里的人：…` | the place's `block`, word for word in every shot there |
+| The first-person sentence and my hands | written by the runner from `hands`, by the scene's era; `hands_note` adds what the hands hold in this shot |
+| `人物的起始状态：…` `道具：…` `镜头路径：…` | the shot's `setup` |
+| `情绪轨迹：…生成一个由以下N个分镜组成的视频。` | the shot's `track` |
+| `分镜1：3秒：…` | the shot's `stages` |
+| `画面最后停在：…` | the shot's `ending` |
+| The last line (voices and sounds only, no BGM, no drawn subtitles) | written by the runner; it differs when I speak in the shot, which it knows from `lines` |
+
+One stage, as you would write it in `stages[].text` (from the example's S01):
 
 ```
-基础视觉风格：<风格句，逐字>
-
-画面具体需要展示的内容：
-{{<角色>}} 是角色<角色>的形象参考（长相、发型、服装以此为准，不继承原图的姿势和背景）。
-{{<场景>}} 是场景参考（空间结构、陈设、光线以此为准）。
-仅参考{{预演}}的镜头运动轨迹、景别变化与节奏，不继承其画面、人物造型、颜色和文字。
-全片没有音乐、背景音乐、配乐、器乐、旋律和氛围铺底音，只有人声、环境声和动作音效。本片段场景设定在：{{<场景>}}。<时段、室内外、环境声，同一场景各段逐字一致>。整体电影感基调：<明暗、纵深、表演尺度，一句>。全程第一人称主观视角单镜头、无剪辑，镜头就是主人公的眼睛，视角宽，带轻微的头部晃动；以下分镜是同一条连续镜头路径上的阶段，不是切镜。主人公的脸和身体不入画，只有主人公的双手从画面下沿正中伸入：<袖口和手腕，逐字取自 cast/我.md>。<开场站位，取自镜头表的首帧一行；接上一段时照上一段的尾帧写>。情绪轨迹：<一行>。生成一个由以下<N>个分镜组成的视频。
-分镜1：<秒>秒：<镜头怎么起、跟着什么>。<触发>，{{<角色>}}<即时反应>，随后<压住或放出来>；<台词前的小动作>后说：“<台词原文>”重音落在“<词>”；说完<保持或移开半秒>。<镜头由什么触发变化、停在什么景别>。
-分镜2：<秒>秒：<同上，一个阶段一件事>
-分镜<N>：<秒>秒：<收场动作的过程>。画面最后停在：<镜头表的尾帧一行>。
-声音只有角色台词、环境声和动作音效；不要生成 BGM，不要生成旁白字幕、台词字幕或对白字幕。
+镜头向上摇，从台面和手抬到玻璃后面{{柜员}}的脸，停在她胸口以上的近景。她手里的圆珠笔还在单据上写，笔尖没有停；听见存折拍在台面上的声音，她先是笔停住，随后才抬眼，眉毛抬高一点，嘴还闭着。画外响起主人公的声音（三十岁男声，低平，慢，像自言自语）：“全买英伟达”她的目光从存折移到镜头，停了半秒，吸了一小口气后说：“确定？”重音落在「定」字上；说完嘴唇合拢，眼睛没有移开。
 ```
 
-A line of my own, said to someone in the scene, is written as `画外响起主人公的声音（三十岁男声，低平，慢）：“<台词原文>”`. In a clip where I say nothing, add `画面中主人公全程不说话。` before the last line. Status and outcome lines never go in a prompt: they are text added in the edit.
+- A person or place of the shot is written `{{名字}}` the first time it appears in a stage, and by name or 她/他 after that.
+- My own line, said to someone in the scene: `画外响起主人公的声音（<lead_voice 的原话>）：“<台词原文>”`.
+- Every spoken word, and only spoken words, sits in Chinese quotation marks “ ”; taken together and in order they must equal the shot's `lines`. `film.py check` compares them.
+- Narration lines never go in a stage: they are text added in the edit.
 
 ### What the first full film showed (2026-11-13)
 

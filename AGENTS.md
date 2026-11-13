@@ -27,7 +27,7 @@ The tools enforce most of these and will refuse to continue. Do not work around 
 2. **Stop and wait for the owner twice.** (a) After the shot list is written and before anything is generated. (b) After the cut is composed and before it is called finished. Never run `film.py approve` or set `"accepted": true` unless the owner has said yes in their own words. Never write the owner's approval yourself.
 3. **Money has a cap.** Nothing is generated without a cap set by the owner (`"budget"` in credits; `h3.budget_yuan` for rented GPUs). Run `budget` and show the price before asking for sign-off. When the cap is reached, stop and report.
 4. **Never send a generation twice.** If a run times out or its outcome is unknown, look it up (`jimeng-novel node result --key <key>`), do not run it again. `film.py` already does this; do not bypass it with your own commands.
-5. **Every shot is written out in at least 3,000 Chinese characters of its own writing** (8,000 on the H3 engine). Detail, not padding: never repeat sentences, never fill with generic adjectives. If you cannot reach the floor honestly, you have not yet decided what happens in the shot.
+5. **Every shot is written out in full.** **The length floor, stated once:** (a) a shot's whole prompt, meaning the place block plus the shot's own layer, is at least 3,000 Chinese characters; (b) the shot's own layer (`setup`, `track`, `stages`, `ending`) is at least 2,000 of them, so a long place block cannot carry a thin shot; (c) a place whose image is still to be made has at least 3,000 in `block` plus `detail`. On the H3 engine (a) is 8,000 and (b) is 5,334. `film.py check` counts all three. Detail, not padding: never repeat sentences, never fill with generic adjectives. If you cannot reach the floor honestly, you have not yet decided what happens in the shot.
 6. **Edit `film.json` only.** `shots/`, `post/`, `.film/` are generated; your edits there are overwritten.
 7. **Nothing real, nothing readable.** No real public figure's name or face. No brand names or logos in the picture. No readable text inside the picture. The AI notice stays on every film and cover.
 8. **Never type a password, a login code or a payment detail.** If `jimeng-novel` is not logged in, ask the owner to log in themselves. A token the owner gives you goes in the file the tools name, never in a project file, a commit or a message.
@@ -82,7 +82,9 @@ The script is a `.txt`, `.md` or `.docx` in which each scene starts on its own l
 python3 series/tools/film.py intake <script file> $P
 ```
 
-This writes `$P/film.json` (a skeleton: scenes with their text and the spoken lines it found) and `$P/DECISIONS.md`. A `?` after a speaker's name means the tool guessed; you settle those.
+This writes `$P/film.json` (a skeleton: scenes with their text and the spoken lines it found) and `$P/DECISIONS.md`. A `?` after a speaker's name means the tool guessed who speaks, or that the line was reported without a colon ("说全买英伟达") and its wording needs a look; you settle those.
+
+Anything in the script before the first scene is the owner's notes, kept in `script_head`. It usually says what the title lines should be ("假如你在2001年全仓买入英伟达"). Notes about how text should look ("上面字幕要大") are already what this format does; do not change sizes for them.
 
 ### Step 2. Read the script and fill in the decision sheet
 
@@ -93,7 +95,7 @@ Read the whole script yourself. The tool's list of lines is a starting point, no
 - **Risky beats**: anything the platform may refuse (sex, violence, gambling, market manipulation played straight). For each: shoot as written, or how you would restage it.
 - **Numbers and years**: which appear on screen as the date line of a scene. Do not put other figures on screen unless the owner asks.
 - **Narration**: the status lines you propose. Rules in `FORMAT.md` section 5. Propose one per scene opening or closing at most, then cut every one the picture already says. Expect to keep about half.
-- **Finish and cap**: the price table is already filled in. Recommend 720p. Ask for a cap.
+- **Finish and cap**: the price table is already filled in from the script's length. It is a first estimate; once the shots are written, `film.py budget` is the figure to quote. Recommend 720p. Ask for a cap.
 
 ### Step 3. Write the film into `film.json`
 
@@ -102,15 +104,15 @@ Work in this order. `series/FILM.md` defines every key; `series/topic-template/f
 1. **Title lines and notice**: `premise` is one or two lines of at most 9 characters each.
 2. **Styles**: one sentence per look (`cold`, `warm`), plus `asset` for reference images. Era, film stock, palette, light. Keep it short.
 3. **My hands** (`hands`): one description per era of the story: skin, nails, cuff, wrist. They change as the protagonist's fortunes do.
-4. **People**: for each speaking person, `body` (face, hair, one garment that never changes), `voice` (20 characters or fewer), and `variants` for a later era. Background people are not listed; they are described inside shots.
-5. **Places**: for each, a `block` of three paragraphs starting `空间：`, `光：`, `背景里的人：` (the room in every direction from where the protagonist stands; where the light comes from; who else is there and what each is doing), a `sound` line, and one `view` with a `vantage` (where his eyes are and what they face). `block` plus `detail` must reach 3,000 characters.
+4. **People**: for each speaking person, `body` (face, hair, one garment that never changes), `voice` (20 characters or fewer), `variants` for a later era, and `images` naming the picture to be made for each look, always as `cast/<名字>.<造型>.png` (the first look is called `默认`). Background people are not listed; they are described inside shots.
+5. **Places**: for each, a `block` of three paragraphs starting `空间：`, `光：`, `背景里的人：` (the room in every direction from where the protagonist stands; where the light comes from; who else is there and what each is doing), a `sound` line, and one `view` with a `vantage` (where his eyes are and what they face) and an `image` named `cast/<场景名>.<视角名>.png`. `block` is exactly those three paragraphs and nothing about a particular shot, because it is repeated word for word in every shot set there; everything else you know about the place (objects on the desks, the season, wear) goes in `detail`, which is used only for the place's image. `block` plus `detail` must reach 3,000 characters.
 6. **Scenes**: one per scene of the script, in order, each with its place, style, era of hands, date line, `when` and `tone`.
 7. **Shots**: split each scene into 1 to 4 shots.
    - Length: about one second per four spoken characters, plus the moves. Whole seconds, 5 to 30 (5 to 15 on H3). Aim for an average near 10.
    - Cut only on something the protagonist does (a slap on the table, standing up, a turn) or on a jump in time, never inside a line.
    - Every shot is one continuous take. Write `setup` (who is where and in what state as it starts; each prop with one fixed description; the camera path in one paragraph), `track` (the emotional track in one line), 3 to 5 `stages` whose seconds add up to the shot, `ending` (the last frame in words), `lines` (speaker and words, each part 10 characters or fewer), `must` and `must_not` (what you will look for in the clip).
    - Follow the "Shot recipe" in `FORMAT.md` section 8 for every stage: how the camera starts, what it follows, what changes it, where it ends; each acting beat as an event, never as a feeling; a small action before each line, the line whole and word for word in Chinese quotation marks “ ”, a held look after it.
-   - The protagonist is written `主人公`. His own lines are written as `画外响起主人公的声音（三十岁男声，低平，慢，像自言自语）：“……”`.
+   - In `lines` the protagonist's speaker name is `我`. Inside `setup` and `stages` he is always written `主人公`, never 我. His own lines are written in a stage as `画外响起主人公的声音（三十岁男声，低平，慢，像自言自语）：“……”`.
    - Chinese quotation marks are only for spoken words. A stressed word goes in corner brackets 「 」.
 8. **Narration**: put each kept line on the shot it belongs to, as `narration.open` or `narration.close`.
 
@@ -123,7 +125,7 @@ python3 series/tools/film.py check  $P
 python3 series/tools/film.py budget $P
 ```
 
-`check` must end with `0 failed` and print no line starting `film.json:` or naming a script line. Fix `film.json` and run it again until it does. It writes the shot list to `$P/shots/E01.md`. Set `"budget"` only when the owner has given a number.
+`check` must end with `0 failed` and print no line starting `film.json:` or naming a script line. Fix `film.json` and run it again until it does; expect several rounds. It writes the shot list to `$P/shots/E01.md` and the image prompts to `$P/cast/`. Reference images do not exist yet at this point; `check` says how many are still to be made, and that is not a failure. `budget` prints the price of each finish and says no cap is set: that is expected. Set `"budget"` only when the owner has given a number.
 
 ### Step 5. STOP 1: send the shot list to the owner
 
@@ -274,7 +276,8 @@ A film can be made with MiniMax H3 in ComfyUI on a GPU rented by the minute from
 | `doctor`: ffmpeg lacks libass | Install a build that has it and set `FFMPEG=/path/to/ffmpeg` |
 | Fonts missing (not macOS) | Install Chinese serif and sans fonts and set `FILM_SERIF`, `FILM_SANS`, `FILM_SANS_BOLD`, for instance `"Noto Serif CJK SC Black"` and `"Noto Sans CJK SC"`. Untested; check the first composed frame |
 | `jimeng-novel` says not logged in | Ask the owner to run `jimeng-novel login`. Do not try to log in for them |
-| `check` says a line is not in the script | You changed a word. Restore it, or if it is a replaced name, add it to `line_changes` |
+| `check` says a line is not in the script | You changed a word. Restore it, or if it is a replaced name, add it to `line_exceptions` |
+| `check` says a line of the script is not in the scene's shots | Either you dropped or changed a line (put it back), or the words it quotes are not all speech: the script ran a stage direction on after the line, or you replaced a real name. Then add the `line_changes` entry it prints, with the words actually spoken in `now` |
 | `check` says quoted words differ from the lines | A stage quotes something that is not a line (use 「 」 for stress), or a line is missing from the stages |
 | `draft --run` says the shot list has not been signed off | Stop 1 has not happened, or you changed something after it. Go back to step 5 |
 | A sound file is missing at compose | The cut is made without it; add your own file to `series/sfx/` if you want the sound |

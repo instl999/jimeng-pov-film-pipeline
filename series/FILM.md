@@ -15,7 +15,7 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 | `finish` | `"720p"` (default), `"sample"` or `"1080p"`; Jimeng engine only. See FORMAT.md section 8 |
 | `budget` | Credit cap for this film. `null` means nothing may be generated |
 | `reroll_rate` | Share of shots expected to be redone, for pricing. `0.3` |
-| `floor` | Characters of own writing a shot needs. `3000`, a hard rule of the series; on the H3 engine it is `8000` and cannot be set lower. A place still to be drawn needs 3,000 (`place_floor`) |
+| `floor` | `3000`: the length floor, a hard rule of the series. (a) a shot's whole prompt, meaning the place block plus the shot's own layer, is at least 3,000 Chinese characters; (b) the shot's own layer (`setup`, `track`, `stages`, `ending`) is at least 2,000 of them, so a long place block cannot carry a thin shot; (c) a place whose image is still to be made has at least 3,000 in `block` plus `detail`. On the H3 engine (a) is 8,000 and (b) is 5,334. `film.py check` counts all three. |
 | `titles` | `{"premise_seconds": 7, "date_seconds": 4}` |
 | `end_card` | `{"seconds": 2, "text": "假如……系列"}` or `null` |
 | `styles` | Named style sentences. `asset` is the one for people and place images; a scene names one of the others |
@@ -24,7 +24,7 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 | `lead_voice_sample` | A recording of my voice, attached on the 720p route when I speak. Optional |
 | `people`, `places` | Below |
 | `line_exceptions` | Subtitle parts that are deliberately not in the script (a replaced name) |
-| `line_changes` | Script lines reworded on purpose: `{"scene": "P09", "line": 6, "now": "…", "why": "…"}`. `line` counts the scene's spoken lines as `python3 series/tools/intake.py SCRIPT.txt` lists them. The original words are not repeated here |
+| `line_changes` | Script lines that are not in the film as the script reader found them, either reworded on purpose (a real name) or because the reader took a stage direction for speech: `{"scene": "P09", "line": 6, "now": "…", "why": "…"}`. `now` is the words actually spoken. `line` counts the scene's spoken lines as `python3 series/tools/intake.py SCRIPT.txt` lists them. The original words are not repeated here |
 | `accepted` | `true` once the owner has approved the cut. Unlocks `cover`; shots are then left as they are |
 | `cover` | `{"shot": "S01", "t": 7.05, "focus": 0.35, "tall": 0.6, "side_lines": ["假如你在", "2001年", "全仓买入", "英伟达"]}` |
 | `scenes` | Below, in film order |
@@ -40,7 +40,7 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 }
 ```
 
-`images` maps a look to its file. `body`, `voice` and `variants` are only needed while an image is still to be made: `film.py build` writes `cast/<name>.md` from them, `film.py images --run` generates what is missing. I ("我") am not a person here: I have no face, only `hands`.
+`images` maps a look to its file; a picture still to be made is always named `cast/<name>.<look>.png` (the generator saves it under that name), and a place view `cast/<place>.<view>.png`. `body`, `voice` and `variants` are only needed while an image is still to be made: `film.py build` writes `cast/<name>.md` from them, `film.py images --run` generates what is missing. I ("我") am not a person here: I have no face, only `hands`.
 
 ## places
 
@@ -58,7 +58,7 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 }
 ```
 
-- `block` is the place layer of every shot set here, word for word: the space in every direction from where I stand, the light, the background people.
+- `block` is the place layer of every shot set here, word for word: exactly three paragraphs, `空间：` (the space in every direction from where I stand), `光：` (the light) and `背景里的人：` (the background people). Nothing about one particular shot goes in it. Everything else about the place goes in `detail`.
 - `master` is the first image made and is upright, seen from where I stand; the other views are derived from it. `vantage` is one sentence saying where the eye is and what it faces.
 - While a view's image is still to be made, `block` plus `detail` must reach the floor.
 
@@ -101,8 +101,8 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 - `people`: who is in the shot and in which look, in the order they first appear. At most three described precisely.
 - `view`: which image of the place to attach (default: the master). `extra_views` adds a second one for a turn: `[{"alias": "证券营业部柜台·大门", "view": "日·竖·大门", "says": "转身后看到的方向"}]`.
 - `chain`: every shot after the first in a scene takes the previous shot's last frame. `false` turns that off.
-- `setup`, `track`, `stages`, `ending`: the shot's own layer. With the place block they must reach the floor, and on their own two thirds of it.
-- `lines`: `[speaker, words]` in order, each as one subtitle part of at most ten characters. `"我"` marks my own lines (they set the tail sentence, the voice reference and the pitch check). The words, taken together, must equal the Chinese-quoted words in the stages.
+- `setup`, `track`, `stages`, `ending`: the shot's own layer. With the place block they must reach the floor (3,000), and on their own two thirds of it (2,000). In them the protagonist is written `主人公`.
+- `lines`: `[speaker, words]` in order, each as one subtitle part of at most ten characters. The speaker is the person's name as in `people`; `"我"` marks my own lines (they set the tail sentence, the voice reference and the pitch check). The words, taken together, must equal the Chinese-quoted words in the stages.
 - `narration`: text-only lines at the start (`open`) or end (`close`) of the shot; `"t": [from, to]` overrides the automatic timing. Only where it earns its place.
 - `sfx`: effects from `series/sfx/`. The click on a date change is added automatically.
 - `must`, `must_not`: what to look for on the frame sheet when the clip is checked.
