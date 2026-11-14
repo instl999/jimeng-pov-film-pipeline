@@ -2,7 +2,12 @@
 """film.py: one runner for one film in the series, from a rough script to the finished cut.
 
     python3 film.py doctor                          is this machine ready: ffmpeg, fonts, jimeng-novel, login
-    python3 film.py intake  SCRIPT PROJECT          rough script (.txt, .md or .docx) -> film.json skeleton + DECISIONS.md
+    python3 film.py develop SERIES ["idea"] [--approve "words"]
+                                                    from a vague idea to a script (series/DEVELOP.md)
+    python3 film.py script-check SCRIPT             is a script written in the series format ready for intake
+    python3 film.py intake  SCRIPT PROJECT [--like OTHER_PROJECT]
+                                                    script (.txt, .md or .docx) -> film.json skeleton + DECISIONS.md;
+                                                    --like copies the look and cast of an earlier episode
     python3 film.py check   PROJECT                 validate film.json, write the shot file, run the gate
     python3 film.py budget  PROJECT                 what each finish costs, against the cap
     python3 film.py approve PROJECT "their words"   record the owner's sign-off on the shot list
@@ -374,6 +379,16 @@ def cmd_check(film):
             own, need = gate.count("".join(place.get("block", []) + place.get("detail", []))), film.d.get("place_floor", 3000)
             print("place %-14s %6d  %s" % (alias, own, "pass" if own >= need else "under the floor of %d (block + detail)" % need))
             rc = rc or (0 if own >= need else 1)
+    import tests.text_lock as text_lock                 # the series' text layers are locked
+    drift, lock = text_lock.differences()
+    for line in drift:
+        print("text layers: " + line)
+    titles = film.d.get("titles", {})
+    want = {"premise_seconds": 7, "date_seconds": 4}
+    if any(titles.get(k, v) != v for k, v in want.items()):
+        print("film.json: \"titles\" must stay %s: the title and date-line timings are locked for the series (series/text-styles.json)" % want)
+        drift.append("titles")
+    rc = rc or (1 if drift else 0)
     lengths = [sh["seconds"] for _, sh, _ in film.shots()]
     print("shots run %d to %d s, %.1f s on average (the rule: 5 or more, about 10 on average)"
           % (min(lengths), max(lengths), sum(lengths) / float(len(lengths))))
@@ -895,7 +910,7 @@ def build_plan(film, final, out_name=None):
     titles = d.get("titles", {})
     name = out_name or (ep + (".mp4" if final else ".draft.mp4"))
     plan = {"cues": "%s.cues.json" % ep, "output": "../out/" + name, "notice": d["notice"], "premise": d["premise"], "layout": "full",
-            "loudness_lufs": -15, "premise_seconds": titles.get("premise_seconds", 7), "scoreboard_seconds": titles.get("date_seconds", 4),
+            "loudness_lufs": -15, "premise_seconds": 7, "scoreboard_seconds": 4,      # locked: series/text-styles.json
             "clips": "../out/%s" % ep, "srt": "srt", "sfx": sfx_dir, "items": items}
     if missing_sfx:
         print("note: no sound file for %s in %s; the cut is made without %s" % (", ".join(missing_sfx), sfx_dir, "it" if len(missing_sfx) == 1 else "them"))
@@ -1130,8 +1145,12 @@ def estimate_seconds(line_chars, scenes):
     return int(round((line_chars / 4.0 + 5.5 * scenes) / 5.0) * 5)
 
 
-def cmd_intake(script_path, project):
+def cmd_intake(script_path, project, like=None):
     import intake
+    import develop
+    why = develop.approval_of(script_path)
+    if why:
+        die(why)
     project = os.path.abspath(project)
     os.makedirs(os.path.join(project, "source"), exist_ok=True)
     kept = os.path.join(project, "source", os.path.basename(script_path))
@@ -1150,16 +1169,33 @@ def cmd_intake(script_path, project):
     head, found = intake.parse(text)
     if not found:
         die("no scenes found: each scene must start on its own line with 画面一： (or 场景一：, 第一场：), then 画面二： and so on")
+    meta = intake.header(head)
     scenes = []
     for n, sc in enumerate(found, 1):
         scenes.append({"id": "P%02d" % n, "title": sc["title"], "date": sc["date"], "place": "", "style": "cold", "hands": "",
-                       "when": "", "tone": "", "script": sc["script"], "lines": sc["lines"], "shots": []})
+                       "when": sc.get("place_hint", ""), "tone": "", "script": sc["script"], "lines": sc["lines"], "shots": []})
+        if sc.get("cast"):
+            scenes[-1]["cast"] = sc["cast"]
+        if sc.get("narration"):
+            scenes[-1]["narration_proposed"] = sc["narration"]
     total_chars = sum(len(re.sub(r"\W", "", said)) for sc in scenes for _, said in sc["lines"])
-    seconds = estimate_seconds(total_chars, len(scenes))
-    film = {"title": "", "episode": "E01", "premise": [], "notice": "AI 生成 · 虚构剧情", "script_head": head,
+    seconds = develop.estimate(total_chars, len(scenes), len(re.findall(r"(?m)^\s*[△▲]", text)))
+    film = {"title": "", "episode": meta.get("episode", "E01"), "premise": meta.get("premise", []), "notice": "AI 生成 · 虚构剧情", "script_head": head,
             "source": os.path.relpath(kept, project), "finish": DEFAULT_FINISH, "budget": None, "reroll_rate": 0.3, "floor": 3000,
             "titles": {"premise_seconds": 7, "date_seconds": 4}, "end_card": None, "styles": {"cold": "", "warm": "", "asset": ""},
             "hands": {}, "lead_voice": "", "props": {}, "people": {}, "places": {}, "line_exceptions": [], "scenes": scenes}
+    if like:                                            # a later episode: same look, same people, same places
+        prev = json.load(open(os.path.join(like, "film.json"), encoding="utf-8"))
+        for key in ("styles", "hands", "lead_voice", "notice", "people", "places", "titles", "end_card", "engine", "finish", "h3", "styles_en", "hands_en"):
+            if key in prev:
+                film[key] = prev[key]
+        film["title"] = prev.get("title", "")
+        if not film["premise"]:
+            film["premise"] = prev.get("premise", [])
+        os.makedirs(os.path.join(project, "cast"), exist_ok=True)
+        for f in os.listdir(os.path.join(like, "cast")) if os.path.isdir(os.path.join(like, "cast")) else []:
+            if not os.path.exists(os.path.join(project, "cast", f)):
+                shutil.copyfile(os.path.join(like, "cast", f), os.path.join(project, "cast", f))
     out = os.path.join(project, "film.json")
     if os.path.exists(out):
         out = os.path.join(project, "film.intake.json")      # never write over a film in progress
@@ -1179,7 +1215,9 @@ def cmd_intake(script_path, project):
              "## 3. 可能被平台拦的情节", "查到：%s" % ("、".join(risky) or "没有"), "每一处：照拍，还是换一种拍法。", "",
              "## 4. 数字和年份", "%s" % ("、".join(figures) or "没有"), "哪些上屏，哪些只留在故事里。", "",
              "## 5. 说话的人", "%s" % "、".join(speakers), "主人公的台词由视频模型在片段里说出来；旁白只出字，不配音。", "",
-             "## 6. 只出字的旁白", "只在画面自己说不清、或者能添一句冷幽默的地方留。拟好后列在这里。", "- （拟好后填）", "",
+             "## 6. 只出字的旁白", "只在画面自己说不清、或者能添一句冷幽默的地方留。拟好后列在这里。"]
+    proposed = ["- %s　%s" % (sc["title"], n) for sc in found for n in sc.get("narration", [])]
+    sheet += (proposed or ["- （拟好后填）"]) + ["",
              "## 7. 成片规格和积分上限", "| 规格 | 做法 | 大约积分 |", "|---|---|---|",
              "| 720p（默认） | 直接按 720p 生成，合成时放大到 1080 | %d |" % round(PRICE["720p"] * seconds * 1.3),
              "| 480p | 样片直接合成，放大到 1080 | %d |" % round(PRICE["draft"] * seconds * 1.3),
@@ -1211,9 +1249,25 @@ def main():
     if cmd == "doctor":
         sys.exit(cmd_doctor())
     if cmd == "intake":
+        like = opt("--like")
+        pos = [a for a in pos if a != like]
         if len(pos) != 2:
             sys.exit(__doc__)
-        sys.exit(cmd_intake(pos[0], pos[1]))
+        sys.exit(cmd_intake(pos[0], pos[1], like))
+    if cmd == "develop":
+        import develop
+        words = opt("--approve")
+        args = [a for a in pos if a != words]
+        if not args:
+            sys.exit(__doc__)
+        if words is not None:
+            sys.exit(develop.approve(args[0], words))
+        sys.exit(develop.start(args[0], args[1]) if len(args) > 1 else develop.status(args[0]))
+    if cmd == "script-check":
+        import develop
+        if len(pos) != 1:
+            sys.exit(__doc__)
+        sys.exit(1 if develop.check_script(pos[0])[0] else 0)
     if not pos:
         sys.exit(__doc__)
     film = Film(pos[0])

@@ -10,6 +10,9 @@
 /series/*
 !/series/FORMAT.md
 !/series/FILM.md
+!/series/DEVELOP.md
+!/series/text-styles.json
+!/series/text-styles.jpg
 !/series/tools/
 !/series/topic-template/
 !/series/sfx/

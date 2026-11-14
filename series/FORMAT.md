@@ -91,6 +91,8 @@ Every shot runs 5 seconds or longer, about 10 on average, and the camera moves f
 
 ## 4. Text on screen
 
+**These layers are locked for the whole series.** Their exact values (font, size, colour, outline, position, timing) are in `series/text-styles.json`, taken from the first finished film and checked against its frames; `series/text-styles.jpg` shows each one in place. `film.py check` fails if the composer drifts from them (`series/tools/tests/text_lock.py`, add `--render` to measure a drawn frame) or if a film tries to change the title timings. Change them only on the owner's word, for every film at once.
+
 All text is white and centred, set in a bold serif (Songti SC Black). Nothing goes above y=150 or below y=1500 on the 1080×1920 frame; a phone app draws its own buttons there. `series/tools/compose_episode.py` draws all of it; nothing is ever written into a video prompt. Stills of the finished look are in `examples/nvidia-2001/stills/`.
 
 | Layer | Carries | Where and when | Look |
@@ -153,6 +155,7 @@ The aim: a rough script goes in and a finished video comes out, with two stops f
 | Step | Command | What it does |
 |---|---|---|
 | 0 | `doctor` | Checks the machine: ffmpeg, fonts, `jimeng-novel`, login |
+| 0a | `develop`, `script-check` | Only when the owner has an idea and no script: from the idea to an approved script (`series/DEVELOP.md`), with its own stop for the owner's yes |
 | 1 | `intake SCRIPT PROJECT` | Splits the rough script (`.txt`, `.md` or `.docx`) into scenes and spoken lines (each scene starts 画面一：, 画面二： …). Writes a `film.json` skeleton and `DECISIONS.md`: lines whose speaker had to be guessed, brands, beats the platform may block, numbers and years, and the three finishes priced from the script's length |
 | 2 | by hand | Read the script. Settle the marked lines, fill in the decision sheet (real names and what replaces them, the narration lines proposed, finish, credit cap) and write the film into `film.json`, shots in the two-layer form below |
 | 3 | `check` | Validates `film.json`, writes the shot file and runs the gate: 3,000 characters of own writing a shot, stages add up, references exist, quoted words equal the lines. Also: every line of the script is in its scene's shots as written (`line_changes` lists the ones reworded on purpose), and a place still to be drawn has 3,000 characters of description |
@@ -191,11 +194,11 @@ A film is made with one of two engines, named in `film.json` as `"engine"`. Imag
 
 | | `jimeng` (default) | `h3` |
 |---|---|---|
-| Model | Seedance 2.5, through `jimeng-novel` | MiniMax H3 (open weights, released 2026-08-03), reference-to-video, in ComfyUI |
+| Model | Seedance 2.5, through `jimeng-novel` | MiniMax H3 (open weights, released 2026-08-03), reference-to-video, in ComfyUI: autodl.art app 252, workflow U22 |
 | Where it runs | Jimeng's service | A GPU rented by the minute on AutoDL Art (autodl.art), started and given back by the runner |
-| Paid in | Credits: 20 a second at 720p, 200 for a 10-second clip | Yuan of GPU time: about 1.5 for a 10-second clip (PRO6000-96G at 8.36 an hour, 2026-11-13) |
+| Paid in | Credits: 20 a second at 720p, 200 for a 10-second clip | Yuan of GPU time: about 0.45 for a 10-second clip with U22 (PRO6000-96G at 8.36 an hour, 2026-11-13) |
 | Prompt | Chinese, the drama skill's form, up to 15,000 characters | English, MiniMax's six-part form; its guide puts the description at 350 to 500 words |
-| Clip | 4 to 30 s, 720p | 5 to 15 s, 768×1344 at 24 fps, picture and sound in one pass |
+| Clip | 4 to 30 s, 720p | 5 to 15 s, 832×1440 at 24 fps (U22), picture and sound in one pass |
 | Floor per shot | 3,000 characters | **8,000**, hard rule |
 | Tools | `film.py` | `film.py` with `h3.py` (prompt and gate), `comfy.py` (the workflow), `autodl.py` (the GPU) |
 
@@ -209,28 +212,32 @@ A film is made with one of two engines, named in `film.json` as `"engine"`. Imag
 
 **Rehearsal.** `python3 series/tools/tests/rehearse_h3.py` runs the whole H3 path against local stand-ins for both services: the gates, the rental, the workflow, the download, the trim, the give-back. It rents nothing. Run it after changing any of the four tools.
 
+### The default H3 setup: app 252, workflow U22
+
+The H3 engine rents **autodl.art app 252, "MINIMAX-H3提速500高画质"** (application id `spcwDDc6XW`) and runs its saved workflow **U22, "MiniMaxH3 多参考生视频 优化版"** (by YZ金鱼). The app ships three files numbered U22; the runner uses `U22-MiniMaxH3-多参考生视频-优化版-YZ金鱼.json`, the complete multi-reference one: up to 9 reference images, a prompt, a length, then a first pass at 0.5 MP and a second pass at 1.5× (832×1440), with its own turbo and style LoRAs. `h3.app`, `h3.version` and `h3.workflow` in `film.json` override these.
+
+How it is run: the runner downloads the workflow from the rented server each time, converts it from the editor's saved form into a runnable graph (`series/tools/comfy_workflow.py`: Set/Get pairs, reroutes and bypassed slots resolved; widget values named from the server's own node definitions), switches on one image slot per reference, writes the shot's prompt, length, seed and the upright 9:16 size into it, and keeps the one video the workflow saves. A re-saved or updated U22 still works as long as it keeps its parts; if one is missing the run stops and names it. `tests/test_comfy_workflow.py` tests the conversion offline.
+
+Measured on a PRO6000-96G, 2026-11-13, with the same prompt and references as the tests below:
+
+| | Plain graph (`"workflow": ""`) | U22 |
+|---|---|---|
+| 10-second clip, GPU time | 652 s | **187 s** |
+| 7-second clip, GPU time | 409 s (first run, models loading) | 163 s (first run) |
+| Size | 768×1344 | 832×1440 |
+| GPU cost of a 10-second clip | about ¥1.5 | **about ¥0.45** |
+
+The first film's 15 shots would take about 1 hour 10 minutes of GPU time with U22, about ¥10 with 30% re-takes. Frame sheets of both U22 test clips are `series/h3-test/u22-7s-frames.jpg` and `u22-10s-frames.jpg`: same shot, both lines in their place, the girlfriend's reaction closer to the written disbelief than the plain graph gave. Watch the first frame: the protagonist's shoes showed at the bottom edge in one take.
+
 ### What the first real H3 clips showed (2026-11-13)
 
-Two test clips of the first film's opening, 7 and 10 seconds, from one prompt: my hand on the passbook, tilt up to the teller, her line, my line from behind the camera, pan right to the girlfriend gripping my sleeve. References: the two character sheets and the upright counter image already made for the Seedance version. The prompt and a frame sheet of each clip are in `series/h3-test/`.
+Before U22 was the default: two test clips from the plain graph, 7 and 10 seconds, of the first film's opening: my hand on the passbook, tilt up to the teller, her line, my line from behind the camera, pan right to the girlfriend gripping my sleeve. The prompt and frame sheets are in `series/h3-test/`.
 
 - **It followed the shot**: first person held, the tilt and the pan came in the written order, both people matched their sheets, and the hand, cuff and passbook were as described.
 - **Both Chinese lines were spoken**, at the right moments, by the right voices, nothing extra (checked by speech recognition on the 7-second clip).
-- **The acting was the weak part.** The girlfriend was written as disbelief with the last trace of a smile; both takes gave a plain smile. Seedance landed this beat on the same description. This is the gap the 8,000-word planning has to close, and it is not closed yet.
+- **The acting was the weak part.** The girlfriend was written as disbelief with the last trace of a smile; both takes gave a plain smile.
 - **It adds things**: posters with pseudo-text on a wall that should be bare, a desk calculator, an emblem on the passbook. There is no negative prompt, so describe the bare wall, the empty counter and the plain cover.
-- **Things that had to be fixed to get there**: the instance API takes GET parameters in the query string although its docs show a body; 4 MB reference images time out on upload, so they are sent as JPEGs of 1536 pixels at most; the save node needs its format chosen explicitly. All three are now covered by the code, the first two by the rehearsal as well.
-
-Time and cost, on a PRO6000-96G at 8.36 yuan an hour, 768×1344, 20 steps:
-
-| Clip | On the server | GPU cost |
-|---|---|---|
-| 7 s (175 frames), cold: 44 GB of weights loading first | 409 s | 0.95 yuan |
-| 10 s (243 frames), warm | 652 s, 31 s a step | 1.51 yuan |
-| 5 s, estimated | about 3.5 min | about 0.5 yuan |
-| 15 s, estimated | about 24 min | about 3.3 yuan |
-| The first film's 15 shots (152 s), estimated | about 3 hours | about 26 yuan; about 34 with 30% re-rolls |
-| The same with the 4-step turbo LoRA, estimated, quality not yet looked at | about 46 min | about 9 yuan with re-rolls |
-
-Time per step grows with the square of the clip's length, so two 5-second shots cost a third of one 10-second shot. The instance was ready about a minute after it was created. The whole test session, from creation to release, was 32.7 minutes and about 4.5 yuan.
+- **Things that had to be fixed to get there**: the instance API takes GET parameters in the query string although its docs show a body; 4 MB reference images time out on upload, so they are sent as JPEGs of 1536 pixels at most; the save node needs its format chosen explicitly.
 
 ### Two-layer prompts
 

@@ -3,7 +3,8 @@
 
     python3 comfy.py URL info                      version, GPU, and which H3 model files it has
     python3 comfy.py URL run --prompt-file P.txt --seconds 10 --ref a.png --ref b.png --out clip.mp4
-                             [--steps 20] [--turbo] [--seed N] [--size 768x1344]
+                             [--steps 20] [--turbo] [--seed N] [--size 768x1344]   the graph built here
+                             [--workflow U22-MiniMaxH3-多参考生视频]                a workflow saved on the server
 
 Used by `film.py draft` when a film's engine is "h3". The graph is the one in ComfyUI's official
 template `video_minimax_h3_r2v.json` (read 2026-11-13), built here node by node:
@@ -104,7 +105,14 @@ class Comfy:
 
     def node(self, class_type):
         if class_type not in self._info:
-            self._info[class_type] = self.get("/object_info/" + urllib.parse.quote(class_type)).get(class_type)
+            for attempt in range(4):                    # the link to a rented server drops requests now and then
+                try:
+                    self._info[class_type] = self.get("/object_info/" + urllib.parse.quote(class_type)).get(class_type)
+                    break
+                except (ComfyError, ValueError):
+                    if attempt == 3:
+                        raise
+                    time.sleep(3)
         if not self._info[class_type]:
             raise ComfyError("this ComfyUI has no node %s (too old, or MiniMax H3 support is missing)" % class_type)
         return self._info[class_type]
@@ -265,6 +273,52 @@ class Comfy:
             raise ComfyError("this server's MiniMaxH3ReferenceToVideo takes reference images under %s, not ref_images.ref_image_N" % ref_slots)
         return self.fill_defaults(g)
 
+    # ---- a workflow saved on the server (the default: U22 of autodl.art app 252)
+    def saved_workflows(self):
+        return self.get("/api/userdata?dir=workflows&recurse=true")
+
+    def saved_workflow(self, wanted):
+        """wanted: a file name, or its start ("U22-MiniMaxH3-多参考生视频"). -> (path, workflow)."""
+        names = self.saved_workflows()
+        hits = [n for n in names if os.path.basename(n) == wanted or os.path.basename(n).startswith(wanted)]
+        if len(hits) != 1:
+            raise ComfyError("expected one saved workflow matching %r on the server, found %d%s" % (
+                wanted, len(hits), (": " + ", ".join(hits)) if hits else ""))
+        with self._open("/api/userdata/" + urllib.parse.quote("workflows/" + hits[0], safe=""), timeout=120) as resp:
+            return hits[0], json.loads(resp.read().decode("utf-8"))
+
+    def info_for(self, wf):
+        classes = {n["type"] for n in wf.get("nodes", [])}
+        out = {}
+        import comfy_workflow
+        for cls in classes - comfy_workflow.EDITOR_ONLY:
+            try:
+                out[cls] = self.node(cls)
+            except ComfyError as err:
+                if "has no node" not in str(err):
+                    raise
+        return out
+
+    def u22_clip(self, workflow, prompt, seconds, image_paths, dest, beat=None, log=print, seed=None):
+        """Run the saved U22 workflow for one shot. -> (dest, seed, seconds it took)."""
+        import comfy_workflow
+        started = time.time()
+        path, wf = self.saved_workflow(workflow)
+        names = [self.upload(p) for p in image_paths]
+        seed = seed if seed is not None else random.randrange(1 << 48)
+        try:
+            graph = comfy_workflow.fill_u22(wf, self.info_for(wf), prompt, seconds, names, seed)
+        except comfy_workflow.WorkflowError as err:
+            raise ComfyError(str(err))
+        job = self.queue(graph)
+        log("  queued %s on %s: %d reference image(s), %s s" % (job[:8], os.path.basename(path), len(names), seconds))
+        files = self.wait(job, beat=beat)
+        videos = [f for f in files if f["filename"].lower().endswith((".mp4", ".webm", ".mov", ".mkv")) and f.get("type") == "output"]
+        if not videos:
+            raise ComfyError("the job finished without a saved video file")
+        self.download(videos[-1], dest)
+        return dest, seed, time.time() - started
+
     def h3_clip(self, prompt, seconds, image_paths, dest, beat=None, log=print, **options):
         """Upload the references, run the workflow, save the clip. -> (dest, seed, seconds it took)."""
         started = time.time()
@@ -306,9 +360,13 @@ def main():
                 beat = autodl.touch
             except ImportError:
                 beat = None
-            dest, seed, took = server.h3_clip(prompt, float(opt("--seconds", "5")), refs, opt("--out", "h3.mp4"), beat=beat, size=size,
-                                              steps=int(opt("--steps", "20")), turbo="--turbo" in argv,
-                                              seed=int(opt("--seed")) if opt("--seed") else None)
+            if opt("--workflow"):
+                dest, seed, took = server.u22_clip(opt("--workflow"), prompt, float(opt("--seconds", "5")), refs, opt("--out", "h3.mp4"),
+                                                   beat=beat, seed=int(opt("--seed")) if opt("--seed") else None)
+            else:
+                dest, seed, took = server.h3_clip(prompt, float(opt("--seconds", "5")), refs, opt("--out", "h3.mp4"), beat=beat, size=size,
+                                                  steps=int(opt("--steps", "20")), turbo="--turbo" in argv,
+                                                  seed=int(opt("--seed")) if opt("--seed") else None)
             print("wrote %s (seed %d) in %.0f s" % (dest, seed, took))
         else:
             sys.exit(__doc__)

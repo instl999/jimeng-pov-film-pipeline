@@ -4,7 +4,7 @@
 A film chooses it with "engine": "h3" in film.json (the default engine is "jimeng"). Everything
 else in the film file stays as it is; the engine adds what H3 needs:
 
-  "h3": {"app": "x3iDTgpUSm", "version": "v2", "gpu": "pro6000-p", "price": 8.8,
+  "h3": {"gpu": "pro6000-p", "price": 8.8,
          "budget_yuan": 40, "steps": 20, "turbo": false}
   "styles_en": {"cold": "..."}, "hands_en": {"2001": "..."}
   people.<name>.en, places.<name>.en, places.<name>.sound_en      one or two English sentences each
@@ -34,7 +34,11 @@ import time
 
 FLOOR = 8000
 MAX_SECONDS = 15
-SIZE = (768, 1344)
+SIZE = (768, 1344)              # the graph built in comfy.py; U22 makes 832x1440 itself (0.5 MP, then a 1.5x second pass)
+DEFAULT_APP = "spcwDDc6XW"      # autodl.art app 252, "MINIMAX-H3提速500高画质" (zealman); the default since 2026-11-13
+DEFAULT_WORKFLOW = "U22-MiniMaxH3-多参考生视频-优化版"   # its saved workflow U22 (YZ金鱼); "" builds the plain graph instead
+U22_PER_SECOND = 19.0            # GPU seconds per second of clip, U22 on a PRO6000-96G: 163 s for 7 s, 187 s for 10 s (2026-11-13)
+U22_OVERHEAD = 120               # seconds a shot also spends on uploads, queueing and the download over the rental's link
 BOOT_MINUTES = 3                # instance ready in about a minute, then 44 GB of weights load on the first clip
 STEP_SECONDS = 31.4             # one sampling step of a 243-frame (10 s) clip at 768x1344 on a PRO6000-96G, measured 2026-11-13
 STEP_FRAMES = 243               # time per step grows with the square of the frame count: a 7 s clip measured 16 s a step
@@ -48,7 +52,7 @@ def words(text):
 
 
 def config(film):
-    cfg = {"steps": 20, "turbo": False, "version": "latest"}
+    cfg = {"steps": 20, "turbo": False, "version": "latest", "app": DEFAULT_APP, "workflow": DEFAULT_WORKFLOW}
     cfg.update(film.d.get("h3", {}))
     return cfg
 
@@ -167,6 +171,8 @@ def shot_minutes(cfg, seconds):
     """Minutes of GPU time one take of a shot needs, from the timings measured on the first real clips."""
     if cfg.get("minutes_per_shot"):
         return float(cfg["minutes_per_shot"])
+    if cfg.get("workflow"):                         # U22: 12 steps at 0.5 MP, then 4 more at 1.5x
+        return (U22_PER_SECOND * seconds + U22_OVERHEAD) / 60.0
     frames = max(5, int(round(seconds * 24)))
     frames += (5 - frames % 17) % 17
     return ((4 if cfg["turbo"] else cfg["steps"]) * STEP_SECONDS * (frames / float(STEP_FRAMES)) ** 2 + 45) / 60.0
@@ -243,8 +249,11 @@ def draft(film, only, run, keep, tools):
             print("%s  %ds" % (sid, sh["seconds"]))
             st["tries"] += 1
             try:
-                _, seed, took = server.h3_clip(text, sh["seconds"], [film.path(p) for p in paths], raw, beat=autodl.touch, size=SIZE,
-                                               steps=cfg["steps"], turbo=cfg["turbo"])
+                if cfg.get("workflow"):
+                    _, seed, took = server.u22_clip(cfg["workflow"], text, sh["seconds"], [film.path(p) for p in paths], raw, beat=autodl.touch)
+                else:
+                    _, seed, took = server.h3_clip(text, sh["seconds"], [film.path(p) for p in paths], raw, beat=autodl.touch, size=SIZE,
+                                                   steps=cfg["steps"], turbo=cfg["turbo"])
                 ok = trim(tools.FFMPEG, raw, dest, sh["seconds"])
             except comfy.ComfyError as err:
                 print("  failed: %s" % err)

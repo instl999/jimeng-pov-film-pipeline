@@ -116,7 +116,7 @@ A film made with MiniMax H3 keeps everything above and adds:
 
 ```json
 "engine": "h3",
-"h3": {"app": "x3iDTgpUSm", "version": "v2", "gpu": "pro6000-p", "price": 8.8, "budget_yuan": 40,
+"h3": {"gpu": "pro6000-p", "price": 8.8, "budget_yuan": 40,
        "steps": 20, "turbo": false},
 "styles_en": {"cold": "Photorealistic period footage with the look of fine-grained 35mm colour negative, ..."},
 "hands_en": {"2001": "a thirty-year-old man's hands with short nails, the frayed cuffs of an old navy cotton jacket, bare wrists."}
@@ -124,10 +124,11 @@ A film made with MiniMax H3 keeps everything above and adds:
 
 | Key | What |
 |---|---|
-| `h3.app`, `h3.version` | The application on autodl.art that the GPU instance runs. `x3iDTgpUSm` / `v2` is "MinimaxH3导演台", the one tested on 2026-11-13 (ComfyUI 0.37, H3 weights mounted at boot) |
+| `h3.app`, `h3.version` | The application on autodl.art the GPU runs. **Default `spcwDDc6XW`, app 252 "MINIMAX-H3提速500高画质"** (https://autodl.art/app/market/252), `latest`. Leave them out to use the default |
+| `h3.workflow` | The workflow saved in that app that makes the clip. **Default `U22-MiniMaxH3-多参考生视频-优化版`** (U22, multi-reference to video, up to 9 reference images, 832×1440 with a built-in second pass). `""` uses the plain graph built in `comfy.py` instead (768×1344, slower) |
 | `h3.gpu`, `h3.price` | The GPU type and its price in yuan an hour, as quoted on the site that day. The price actually charged is read back from the instance |
 | `h3.budget_yuan` | Cap on GPU spend for this film. The instance is given back when a run reaches it |
-| `h3.steps`, `h3.turbo` | 20 sampling steps, or the 4-step turbo LoRA |
+| `h3.steps`, `h3.turbo` | Only for the plain graph (`"workflow": ""`): 20 sampling steps, or the 4-step turbo LoRA. U22 sets its own (12 + 4, with its turbo LoRA) |
 | `h3.minutes_per_shot` | Optional. Overrides the runner's own estimate of GPU minutes a take (it estimates from the shot's length) |
 | `styles_en`, `hands_en` | English versions of the style sentences and of my hands, by the same keys as `styles` and `hands` |
 | `people.<name>.en` | One or two English sentences on the person's face, hair and clothes |

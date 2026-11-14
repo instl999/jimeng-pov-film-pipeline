@@ -1,6 +1,8 @@
 # Operating manual for agents
 
-You are the production agent for a series of first-person short films. A person (the **owner**) gives you a rough Chinese script; you turn it into a finished vertical video with two covers. This file tells you exactly how. Read all of it before you run anything.
+You are the production agent for a series of first-person short films. A person (the **owner**) gives you a rough Chinese script, or only an idea; you turn it into a finished vertical video with two covers. This file tells you exactly how. Read all of it before you run anything.
+
+**If the owner has only an idea and no script, start with `series/DEVELOP.md`** (Step 0 below): it takes the idea to an approved script, then comes back here at Step 1.
 
 Three more files, read when you reach the step that needs them:
 
@@ -8,7 +10,9 @@ Three more files, read when you reach the step that needs them:
 |---|---|---|
 | `series/FORMAT.md` | The craft spec: what the film looks and sounds like, how a shot is written, how a clip is judged | Before writing shots (sections 2 to 5 and "Shot recipe"), before judging clips (section 9) |
 | `series/FILM.md` | Every key of `film.json`, the one file a film is written in | While writing `film.json` |
+| `series/DEVELOP.md` | From an idea to a script: the questions to ask, the setting, the outline, the script format, Stop 0 | When there is no script yet |
 | `examples/nvidia-2001/` | A finished film: its `film.json`, shot list, decision sheet, cover prompts, covers and stills | Whenever you are unsure what good looks like. Start with `examples/nvidia-2001/README.md` |
+| `examples/bitcoin-2010-develop/` | An idea taken to an approved-ready script: brief, setting, outline, episode 1 | When developing an idea |
 
 ## 1. What you are making
 
@@ -24,7 +28,7 @@ Look at `examples/nvidia-2001/stills/` and `examples/nvidia-2001/out/` now so yo
 The tools enforce most of these and will refuse to continue. Do not work around a refusal; fix what it names.
 
 1. **Follow the script exactly.** Every scene, in order, every line word for word. Never drop, reorder, merge, shorten or invent. The only change allowed: a real public figure's name is replaced by a description, and you tell the owner.
-2. **Stop and wait for the owner twice.** (a) After the shot list is written and before anything is generated. (b) After the cut is composed and before it is called finished. Never run `film.py approve` or set `"accepted": true` unless the owner has said yes in their own words. Never write the owner's approval yourself.
+2. **Stop and wait for the owner.** (0) When you wrote the script from an idea: after the brief, setting, outline and first script, before anything else. (a) After the shot list is written and before anything is generated. (b) After the cut is composed and before it is called finished. Never run `film.py approve` or set `"accepted": true` unless the owner has said yes in their own words. Never write the owner's approval yourself.
 3. **Money has a cap.** Nothing is generated without a cap set by the owner (`"budget"` in credits; `h3.budget_yuan` for rented GPUs). Run `budget` and show the price before asking for sign-off. When the cap is reached, stop and report.
 4. **Never send a generation twice.** If a run times out or its outcome is unknown, look it up (`jimeng-novel node result --key <key>`), do not run it again. `film.py` already does this; do not bypass it with your own commands.
 5. **Every shot is written out in full.** **The length floor, stated once:** (a) a shot's whole prompt, meaning the place block plus the shot's own layer, is at least 3,000 Chinese characters; (b) the shot's own layer (`setup`, `track`, `stages`, `ending`) is at least 2,000 of them, so a long place block cannot carry a thin shot; (c) a place whose image is still to be made has at least 3,000 in `block` plus `detail`. On the H3 engine (a) is 8,000 and (b) is 5,334. `film.py check` counts all three. Detail, not padding: never repeat sentences, never fill with generic adjectives. If you cannot reach the floor honestly, you have not yet decided what happens in the shot.
@@ -33,7 +37,8 @@ The tools enforce most of these and will refuse to continue. Do not work around 
 8. **Never type a password, a login code or a payment detail.** If `jimeng-novel` is not logged in, ask the owner to log in themselves. A token the owner gives you goes in the file the tools name, never in a project file, a commit or a message.
 9. **Respect a refusal from the generator's content review.** Restage the beat. Do not search for wording that slips past the filter.
 10. **A rented GPU is given back.** At most one at a time, never idle for 15 minutes. `autodl.py` does this; if you ever start one by hand, run `python3 series/tools/autodl.py down` and then `autodl.py list` to confirm nothing is left.
-11. **Report truthfully.** Say what you did not test, what is still wrong in the cut, and what was spent.
+11. **The text on screen is locked.** Six layers, one look, fixed positions (`series/text-styles.json`, shown in `series/text-styles.jpg`). Never change their fonts, sizes, positions or timings, and never add a text layer. If the owner wants a change, it is a change to the series, made in that file and the composer together.
+12. **Report truthfully.** Say what you did not test, what is still wrong in the cut, and what was spent.
 
 Everything else is craft, and craft is your job: where the camera goes, how a line is staged, which narration lines to propose, which take to keep. Do not ask the owner about craft. Decide, note the choice in one line, carry on.
 
@@ -62,6 +67,9 @@ Then prove the clone works, without spending anything:
 python3 series/tools/film.py check  examples/nvidia-2001     # must end with "0 failed"
 python3 series/tools/film.py status examples/nvidia-2001
 python3 series/tools/tests/rehearse_h3.py                    # must end with "all steps hold"
+python3 series/tools/tests/test_develop.py                   # must end with "all steps hold"
+python3 series/tools/tests/test_comfy_workflow.py            # must end with "all steps hold"
+python3 series/tools/tests/text_lock.py --render             # "text layers match the locked series spec"
 ```
 
 Do not continue until `doctor` says `ready`.
@@ -73,6 +81,21 @@ All commands run from the repository root. `P` is the film's folder; make one pe
 ```bash
 P=films/<short-name>
 ```
+
+### Step 0. Only an idea? Develop it first
+
+Follow `series/DEVELOP.md` from start to end. In short:
+
+```bash
+python3 series/tools/film.py develop films/<series> "<the owner's idea, word for word>"
+# ask the question card once; fill in story/brief.md; write story/setting.md, story/outline.md, story/E01.txt
+python3 series/tools/film.py script-check films/<series>/story/E01.txt     # until "ready for intake"
+python3 series/tools/film.py develop films/<series>                        # status and cost
+# STOP 0: send brief, setting, outline, E01 to the owner and wait for their yes, then:
+python3 series/tools/film.py develop films/<series> --approve "<the owner's words>"
+```
+
+Then each episode is a film: `P=films/<series>/E01` and Step 1 takes `films/<series>/story/E01.txt`. From then on that script is the owner's script and rule 1 applies to it. For episode 2 onwards add `--like films/<series>/E01` to Step 1 so the look and the people carry over.
 
 ### Step 1. Take in the script
 
@@ -261,7 +284,7 @@ The example film (152 seconds, 15 shots) is about 3,950 credits at 720p with 30%
 
 ## 7. The second engine: MiniMax H3 on a rented GPU
 
-A film can be made with MiniMax H3 in ComfyUI on a GPU rented by the minute from AutoDL Art, instead of Seedance on Jimeng: about 1.5 yuan for a 10-second clip. Use it only when the owner asks for it. It is newer and less proven here: two test clips, no full film yet, and its acting was weaker than Seedance's on the same shot.
+A film can be made with MiniMax H3 in ComfyUI on a GPU rented by the minute from AutoDL Art, instead of Seedance on Jimeng: about 0.45 yuan for a 10-second clip. By default it rents autodl.art app 252 ("MINIMAX-H3提速500高画质") and runs its saved workflow U22 (multi-reference to video); the runner sets this up by itself. Use the engine only when the owner asks for it. It is newer and less proven here: four test clips, no full film yet, and its acting was weaker than Seedance's on the same shot.
 
 - Set `"engine": "h3"` and the `"h3"` block in `film.json`; give every shot an `h3.summary` and `h3.body` in English, every person and place an `en` line. All of it is in `series/FILM.md`, "The H3 engine". A complete example prompt is `series/h3-test/prompt.txt`.
 - **The floor is 8,000 per shot**: the Chinese layer plus the English H3 prompt. The Chinese layer comes first; the H3 prompt is distilled from it, 350 to 500 English words.
@@ -289,11 +312,14 @@ A film can be made with MiniMax H3 in ComfyUI on a GPU rented by the minute from
 AGENTS.md                      this file
 series/FORMAT.md               craft spec
 series/FILM.md                 the film file, key by key
-series/tools/film.py           the runner: doctor, intake, check, budget, approve, images, preview, draft, qc, review, compose, cover, status
+series/DEVELOP.md              from an idea to a script
+series/text-styles.json        the locked text on screen (and text-styles.jpg)
+series/tools/film.py           the runner: doctor, develop, script-check, intake, check, budget, approve, images, preview, draft, qc, review, compose, cover, status
 series/tools/                  the tools film.py calls; tests/rehearse_h3.py
 series/topic-template/         a blank project card and a blank film.json
 series/sfx/                    your sound effects (not included)
 examples/nvidia-2001/          the worked example
+films/<series>/story/          brief, setting, outline, E01.txt … when you developed an idea
 films/<name>/                  your films (not committed)
   film.json                    the film; the only file you edit
   DECISIONS.md                 the decision sheet for the owner

@@ -15,6 +15,18 @@ person. A line whose speaker had to be guessed carries a "?" after the name, and
 reported without a colon ("说全买英伟达") is always marked that way, because its wording is the
 writer's summary and may need a look. Nothing is dropped or reworded here: the scene keeps its
 full text under "script", and whoever fills in film.json settles the marked lines.
+
+A script written in this series' own format (series/DEVELOP.md, section 6) is read without guessing:
+
+    片头：假如你在2010年 / 买了一万块比特币        the two title lines
+    集：E01                                        which episode this file is
+    画面一：（2010年5月　买入第一天）              a scene, with its date line
+    地点：网吧，夜                                 where it happens
+    出场：同学                                     who is in it
+    △ 主人公点下付款，屏幕上跳出一行绿字。         an action line: never speech
+    同学（凑过来，笑）：你花一万块买这个？         a spoken line
+    主人公：先放着。                               the protagonist speaks
+    【字幕：来买比特币了..】                       a narration line, text only
 """
 import re
 import sys
@@ -179,20 +191,55 @@ def lines_of(raw, names):
     return out
 
 
+META = ("地点", "出场", "时间")                                  # scene facts, not speech
+NARRATION = re.compile(r"【\s*(?:字幕|旁白)\s*[：:]\s*([^】]+)】")
+
+
+def header(head):
+    """The lines before the first scene: 片头 (title lines) and 集 (episode), when the script gives them."""
+    out = {}
+    m = re.search(r"(?m)^\s*片头\s*[：:]\s*(.+)$", head)
+    if m:
+        out["premise"] = [p.strip() for p in re.split(r"\s*[/／|｜]\s*", m.group(1)) if p.strip()]
+    m = re.search(r"(?m)^\s*集\s*[：:]\s*(E\d+)", head)
+    if m:
+        out["episode"] = m.group(1)
+    return out
+
+
 def parse(text):
-    """-> (head, scenes). A scene: title, date, script (its full text), lines, quoted."""
+    """-> (head, scenes). A scene: title, date, script (its full text), lines, quoted, and, when the
+    script gives them, place, cast and narration (the 【字幕：】 lines)."""
     blocks = re.split(r"(?m)^(?=(?:%s)[：:])" % SCENE, text)
     names = names_in(text)
     scenes = []
     for block in blocks[1:]:
         m = re.match(r"(%s)[：:]\s*(?:[（(]([^）)]*)[）)])?" % SCENE, block)
         body = block[m.end():]
-        lines = []
+        lines, narration, facts = [], [], {}
         for raw in body.splitlines():
-            if raw.strip():
-                lines += lines_of(raw, names)
-        scenes.append({"title": m.group(1), "date": (m.group(2) or "").strip(), "script": body.strip(), "lines": lines,
-                       "quoted": re.findall(r"[“\"]([^”\"]+)[”\"]", body)})
+            line = raw.strip()
+            if not line:
+                continue
+            for said in NARRATION.findall(line):
+                narration.append(said.strip())
+            line = NARRATION.sub("", line).strip()
+            if not line or line.startswith(("△", "▲")):    # an action line is never speech
+                continue
+            meta = re.match(r"(%s)\s*[：:]\s*(.+)$" % "|".join(META), line)
+            if meta:
+                facts[meta.group(1)] = meta.group(2).strip()
+                continue
+            lines += lines_of(line, names)
+        scene = {"title": m.group(1), "date": (m.group(2) or "").strip(), "script": body.strip(), "lines": lines,
+                 "quoted": re.findall(r"[“\"]([^”\"]+)[”\"]", NARRATION.sub("", body))}
+        if facts.get("地点"):
+            scene["place_hint"] = facts["地点"]
+        if facts.get("出场"):
+            scene["cast"] = [c for c in re.split(r"[、，,\s]+", facts["出场"]) if c]
+        if narration:
+            scene["narration"] = narration
+        scenes.append(scene)
     return blocks[0].strip(), scenes
 
 
@@ -207,3 +254,5 @@ if __name__ == "__main__":
             print("   %-8s %s" % (who, said))
         for q in sc["quoted"]:
             print("   (quoted)  %s" % q)
+        for n in sc.get("narration", []):
+            print("   (字幕)    %s" % n)

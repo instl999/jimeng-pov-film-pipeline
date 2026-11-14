@@ -59,7 +59,7 @@ def shot(sid, seconds, chain):
 
 film = {"title": "rehearsal", "episode": "E01", "premise": ["排练", "不花钱"], "notice": "AI 生成", "source": "", "engine": "h3",
         "budget": 0, "reroll_rate": 0.3,
-        "h3": {"app": "mockapp", "gpu": "pro6000-p", "price": 8.8, "budget_yuan": 5, "minutes_per_shot": 1},
+        "h3": {"app": "mockapp", "workflow": "", "gpu": "pro6000-p", "price": 8.8, "budget_yuan": 5, "minutes_per_shot": 1},
         "titles": {"premise_seconds": 7, "date_seconds": 4}, "end_card": None,
         "styles": {"default": "真人实拍的年代写实照片质感", "asset": "真人实拍的年代写实照片质感"},
         "styles_en": {"default": "Photorealistic period footage on fine-grained 35mm colour negative, desaturated grey-blue and teal."},
