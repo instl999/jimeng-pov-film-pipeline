@@ -198,9 +198,9 @@ NARRATION = re.compile(r"【\s*(?:字幕|旁白)\s*[：:]\s*([^】]+)】")
 def header(head):
     """The lines before the first scene: 片头 (title lines) and 集 (episode), when the script gives them."""
     out = {}
-    m = re.search(r"(?m)^\s*片头\s*[：:]\s*(.+)$", head)
-    if m:
-        out["premise"] = [p.strip() for p in re.split(r"\s*[/／|｜]\s*", m.group(1)) if p.strip()]
+    lines = re.findall(r"(?m)^\s*片头\s*[：:]\s*(.+)$", head)      # one line with " / ", or one 片头 line each
+    if lines:
+        out["premise"] = [p.strip() for line in lines for p in re.split(r"\s*[/／|｜]\s*", line) if p.strip()]
     m = re.search(r"(?m)^\s*集\s*[：:]\s*(E\d+)", head)
     if m:
         out["episode"] = m.group(1)

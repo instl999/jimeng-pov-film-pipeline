@@ -12,6 +12,8 @@ Fixed for every film in this series, so never asked: first-person camera (the pr
 
 What first person is good at: people talking at you, reacting to you, coming round to you; a choice you make with your hands; places you walk into. Build the story out of those.
 
+**An idea built on inner voices** (hearing thoughts, a system talking in his head, a narrator) cannot be shot as written, because there is no voiceover. Turn the inner voice into something in the scene: the person mutters the thought aloud under their breath, or it shows on their phone screen, and the protagonist answers it. Put this change to the owner as a question in the question card ("心声没法用画外音，我打算让顾客自己小声嘟囔出来，可以吗？"), not as an assumption.
+
 The idea supplies everything else: what happens, to whom, in what world, for whom, how long.
 
 ## 1. Read the idea and start the folder
@@ -26,7 +28,7 @@ Read the idea and write down, for yourself, what it already answers. "假如2001
 
 ## 2. Ask once: the question card
 
-Send the owner **one** message with every open question, each with 2 to 4 options and the recommended one first, and the line "不想选的我按推荐来". Ask only what would send the whole thing the wrong way if you guessed wrong. Typically:
+Send the owner **one** message with every open question, each with 2 to 4 options and the recommended one first, and the line "不想选的我按推荐来". Paste the same text into `story/brief.md` section 2 when you send it, and the owner's reply under it when it comes. Ask only what would send the whole thing the wrong way if you guessed wrong. Typically:
 
 | # | Question | Options (recommended first) | Skip it when |
 |---|---|---|---|
@@ -118,7 +120,7 @@ This is the exact format the pipeline reads. Anything else gets guessed at.
 
 | Line | Rule |
 |---|---|
-| `片头：一行 / 二行` | The two title lines, 9 characters or fewer each. Before the first scene |
+| `片头：一行 / 二行` | The two title lines, 9 characters or fewer each, on one line with ` / ` between them. Before the first scene |
 | `集：E01` | Which episode this file is. Before the first scene |
 | `画面N：（日期行）` | One scene. The bracket is the date line shown on screen when the time changes ("2007年　买入第约2555天"). One time and one place per scene |
 | `地点：` | Where, and 日/夜. The same name every time the place comes back |
@@ -145,7 +147,7 @@ Check it:
 python3 series/tools/film.py script-check films/<series-name>/story/E01.txt
 ```
 
-Fix every ERROR. Read every note and fix it unless you have a reason; write the reason in the brief's 「我做的假设」.
+Fix every ERROR. "ready for intake" with notes is not done: read every note and fix it unless you have a reason, and write the reason in the brief's 「我做的假设」. Then run `film.py develop films/<series-name>`: it also checks the title and one-line story lengths, the setting's sections and the outline's episodes.
 
 ## 7. Read it as the audience, then improve it once or twice
 
@@ -166,7 +168,7 @@ Do not report a self-score to the owner. Report what you changed.
 
 Send `story/brief.md`, `story/setting.md`, `story/outline.md` (if more than one episode) and `story/E01.txt`, and say, with your numbers:
 
-> 立项单、设定、大纲和第 1 集剧本都在这里。一句话故事：……。共 N 集，每集约 M 秒，第 1 集 K 场。我替你定了这些：……（立项单第 4 节）。按 720p 整部大约 X 积分。你看看剧本，哪里要改直接说；没问题就回我一句「可以」，之后就照这一稿一字不改地拍。
+> 立项单、设定、大纲和第 1 集剧本都在这里。一句话故事：……。共 N 集，每集约 M 秒，第 1 集 K 场。我替你定了这些：……（立项单第 4 节）。按 720p 整部大约 X 积分（含重拍和角色场景图；第 1 集大约 Y）。你看看剧本，哪里要改直接说；没问题就回我一句「可以」，之后就照这一稿一字不改地拍。
 
 Wait. When they ask for changes, make them and show the changed parts again. When they say yes, record their words exactly:
 

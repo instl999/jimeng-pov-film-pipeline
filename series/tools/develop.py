@@ -144,6 +144,8 @@ def check_script(path, quiet=False):
         return errors, warnings, {}
     if not meta.get("premise"):
         errors.append("no 片头 line before the first scene, e.g. 片头：假如你在2010年 / 买了一万块比特币")
+    elif len(meta["premise"]) > 2:
+        errors.append("片头 has %d lines; it is one or two" % len(meta["premise"]))
     elif any(len(p) > 9 for p in meta["premise"]):
         warnings.append("a 片头 line is longer than 9 characters: %s" % " / ".join(meta["premise"]))
     if not meta.get("episode"):
@@ -209,7 +211,8 @@ def check_script(path, quiet=False):
             print("ERROR  " + e)
         for w in warnings:
             print("note   " + w)
-        print("ready for intake" if not errors else "not ready: %d error(s)" % len(errors))
+        print(("ready for intake" + (" (read the %d note(s) above and fix them, or write down why not, before Stop 0)" % len(warnings) if warnings else ""))
+              if not errors else "not ready: %d error(s)" % len(errors))
     return errors, warnings, facts
 
 
@@ -269,10 +272,30 @@ def status(series):
     todo = brief.split("## 6.")[0].count("<<")          # section 6 is the owner's yes, recorded by --approve
     n_eps, want = episodes_of(brief), target_seconds(brief)
     print("brief      %s" % ("%d place(s) still to fill (<<...>>)" % todo if todo else "filled in"))
+    for label, lo, hi in (("片名", 4, 12), ("一句话故事", 30, 50)):
+        m = re.search(r"(?m)^- %s：(.+)$" % label, brief)
+        if m and "<<" not in m.group(1):
+            n = len(re.sub(r"[\W_]", "", m.group(1)))
+            if not lo <= n <= hi:
+                print("           %s has %d characters; it should have %d-%d" % (label, n, lo, hi))
     print("           %s episode(s) of %s s" % (n_eps or "?", "%d-%d" % want if want else "?"))
     for name, need in (("setting.md", True), ("outline.md", (n_eps or 1) > 1)):
-        there = os.path.isfile(os.path.join(story, name))
+        path = os.path.join(story, name)
+        there = os.path.isfile(path)
         print("%-10s %s" % (name.split(".")[0], "written" if there else ("missing" if need else "not needed (one episode)")))
+        if there and name == "setting.md":
+            text = open(path, encoding="utf-8").read()
+            for part in ("一句话故事", "卖点", "人物", "主线引擎", "关系引擎", "时间线"):
+                if part not in text:
+                    print("           setting has no 「%s」 section (series/DEVELOP.md section 4)" % part)
+            sell = re.search(r"卖点[^\n]*\n((?:\s*\d+[.、].*\n?)+)", text)
+            if sell and len(re.findall(r"(?m)^\s*\d+[.、]", sell.group(1))) < 3:
+                print("           setting has fewer than 3 selling points")
+        if there and name == "outline.md":
+            text = open(path, encoding="utf-8").read()
+            for k in range(1, (n_eps or 1) + 1):
+                if not re.search(r"(?m)^## E%02d" % k, text):
+                    print("           outline has no section ## E%02d" % k)
     scripts = sorted(n for n in os.listdir(story) if re.fullmatch(r"E\d+\.(?:txt|md)", n))
     total = 0
     for n in scripts:
@@ -281,9 +304,12 @@ def status(series):
         print("%-10s about %d s; %s" % (n, facts.get("seconds", 0), "ready" if not errors else "%d error(s) (film.py script-check)" % len(errors)))
     if not scripts:
         print("scripts    none yet")
+    elif n_eps and len(scripts) < n_eps:
+        print("           E%02d-E%02d not written yet: they come after the owner's yes to the outline and E01 (Stop 0)" % (len(scripts) + 1, n_eps))
     if n_eps and want:
         secs = n_eps * (want[0] + want[1]) / 2.0
-        print("cost       the whole series, %d s at 720p: about %d credits" % (secs, price(secs)))
+        print("cost       the whole series, %d s at 720p with 30%% re-takes, reference images included: about %d credits (episode 1 alone: about %d)"
+              % (secs, price(secs), price(secs / n_eps)))
     path = os.path.join(story, "approved.json")
     if os.path.isfile(path):
         record = json.load(open(path, encoding="utf-8"))
