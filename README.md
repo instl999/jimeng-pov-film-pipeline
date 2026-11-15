@@ -22,6 +22,8 @@ Or, with only an idea:
 
 > Clone this repository and read `AGENTS.md`, then follow it. I don't have a script yet, only an idea: 「<your idea>」. Develop it with me first.
 
+For more story work than this pipeline's first episode (every episode of a series, a script doctor's report with evidence, adapting a novel, or a script for some other format or video model), use the standalone [story agent](https://github.com/instl999/story-agent). Its `export --to pov` writes scripts this pipeline takes in at Step 1.
+
 Everything the agent needs is in three files and one example:
 
 | | |

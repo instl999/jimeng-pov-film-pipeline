@@ -4,6 +4,8 @@ Use this when the owner has only an idea ("假如2010年买了比特币", "一�
 
 The owner decides direction and pays; you decide craft. Everything you write here becomes "the owner's script" the moment they approve it, and from then on it is followed word for word.
 
+For a whole series written out, a script doctor, or adapting someone's novel, the standalone [story agent](https://github.com/instl999/story-agent) goes further; its `story.py export --to pov` writes the script format this pipeline reads (section 6).
+
 The worked example is `examples/bitcoin-2010-develop/`: an idea in one line, the brief, the setting, a three-episode outline and the first episode's script, all as they should look.
 
 ## 0. What is fixed and what the idea supplies
