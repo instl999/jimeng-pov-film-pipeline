@@ -17,7 +17,7 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 | `reroll_rate` | Share of shots expected to be redone, for pricing. `0.3` |
 | `floor` | `3000`: the length floor, a hard rule of the series. (a) a shot's whole prompt, meaning the place block plus the shot's own layer, is at least 3,000 Chinese characters; (b) the shot's own layer (`setup`, `track`, `stages`, `ending`) is at least 2,000 of them, so a long place block cannot carry a thin shot; (c) a place whose image is still to be made has at least 3,000 in `block` plus `detail`. On the H3 engine (a) is 8,000 and (b) is 5,334. `film.py check` counts all three. |
 | `titles` | `{"premise_seconds": 7, "date_seconds": 4}` |
-| `end_card` | `{"seconds": 2, "text": "假如……系列"}` or `null` |
+| `end_card` | `null`, the default on both engines: the film ends on the last frame of its last shot, with no black tail. `{"seconds": 2, "text": "假如……系列"}` adds a black card after it, only when the owner asks for one |
 | `styles` | Named style sentences. `asset` is the one for people and place images; a scene names one of the others |
 | `hands` | My hands and cuffs by era, e.g. `{"2001": "三十岁男性的双手……"}`. A scene names one |
 | `lead_voice` | The description of my voice, reused word for word |
@@ -127,11 +127,17 @@ A film made with MiniMax H3 keeps everything above and adds:
 | `h3.app`, `h3.version` | The application on autodl.art the GPU runs. **Default `spcwDDc6XW`, app 252 "MINIMAX-H3提速500高画质"** (https://autodl.art/app/market/252), `latest`. Leave them out to use the default |
 | `h3.workflow` | The workflow saved in that app that makes the clip. **Default `U22-MiniMaxH3-多参考生视频-优化版`** (U22, multi-reference to video, up to 9 reference images, 832×1440 with a built-in second pass). `""` uses the plain graph built in `comfy.py` instead (768×1344, slower) |
 | `h3.gpu`, `h3.price` | The GPU type and its price in yuan an hour, as quoted on the site that day. The price actually charged is read back from the instance |
+| `h3.tuning` | Changes to U22's own settings, from `TUNING` in `series/tools/comfy_workflow.py`. **Default `{"style_lora": 0}`**: U22's style LoRA off, which the bench of 2026-11-14 found better (`FORMAT.md`). `{"style_lora": 0, "turbo": false, "steps": 24, "first_steps": 18}` is a little sharper at 1.6 times the GPU time |
+| `h3.tuning` knobs | `turbo` takes `false` (off) or a number (the speed LoRA's strength, U22: 1.0); `upscaler` names the model of the latent upscale between U22's two passes (U22: `minimax_h3_latent_upscaler_3d_fp16.safetensors`; the server also has `h3_upscaler_sharpness_2000steps_v0.1_fp32.safetensors`, the default since the bench of 2026-11-14; `h3_clean_latent_upscaler_film_epoch200` is listed but does not load in that node). The rest are in `TUNING` |
+| `h3.post` | What is done to every H3 clip when it is fitted to its length. **Default `{"sharpen": 0.5, "grain": 5}`**: a light unsharp mask and fine moving grain, so U22's smooth skin and cloth read as 35mm film. `0` turns either off. It hides smoothing; it does not add detail |
+| `h3.refs` | How the reference images reach the rented server. **Default `"jimeng"`**: each is shrunk to a JPEG of at most 1024 px, put on Jimeng as an asset (free, about 20 s each, done before the GPU is rented) and the server fetches it from Jimeng's picture CDN by its signed address (valid about 15 days, cached in `.film/state.json`). `"upload"` sends them through the server's gateway instead, which measured 1 to 3 KB/s on 2026-11-14 (a 55 KB picture took 20 to 90 s and half the sends timed out). Only the U22 workflow takes addresses |
 | `h3.budget_yuan` | Cap on GPU spend for this film. The instance is given back when a run reaches it |
 | `h3.steps`, `h3.turbo` | Only for the plain graph (`"workflow": ""`): 20 sampling steps, or the 4-step turbo LoRA. U22 sets its own (12 + 4, with its turbo LoRA) |
 | `h3.minutes_per_shot` | Optional. Overrides the runner's own estimate of GPU minutes a take (it estimates from the shot's length) |
 | `styles_en`, `hands_en` | English versions of the style sentences and of my hands, by the same keys as `styles` and `hands` |
 | `people.<name>.en` | One or two English sentences on the person's face, hair and clothes |
+| `people.<name>.voice_en` | Required for everyone who speaks. The voice in English: age, sex, accent, pitch, texture, pace, the habit that makes it theirs ("a woman in her late forties, Mandarin with a northern lilt, slightly hoarse, quick when anxious, her phrases falling away at the end"). The runner puts it in the prompt as "(S1) is the voice of <Subject 1>: ..." |
+| `lead_voice_en` | Required when I speak. My voice in English, the same words in every shot, so the model gives me one voice through the film. Goes in as "(S2) is the protagonist's own voice, heard from just behind the camera, close and dry: ..." |
 | `places.<name>.en`, `.sound_en` | The place in English, and its ambient sound in English |
 
 and on every shot:
@@ -145,7 +151,10 @@ and on every shot:
 ```
 
 - `body` is the shot in H3's own prompt language, written from the Chinese stages: English, one `[Shot 1]` (the runner adds the tag), the camera's path in plain words, each acting beat in order, and every spoken line word for word inside `<d>[Chinese] ...</d>` with its speaker's `(S1)`, `(S2)` id outside the tag. `{名字}` stands for a person or the place of the shot and becomes its `<Subject N>` label. My own lines are written as an off-screen voice. MiniMax's guide puts a description at 350 to 500 English words; under 250 is refused.
-- The runner writes the rest of the six-part prompt (subject definitions, retention analysis, the first-person sentence, soundscape, "no music") from the film file, and numbers the reference images `<Picture 1>`, `<Picture 2>` in the order people, place, extra views, previous last frame.
+- **Voices.** The runner reads who each `(S1)`, `(S2)` is from `{名字} (S1)` and `protagonist (S2)` in `body`, and describes each voice from `voice_en` / `lead_voice_en`. A voice the body does not tie to anyone (a mother on the phone) is named in `"h3": {"voices": {"S2": "母亲"}}`. `check` refuses a voice id it cannot place, or a speaker with no English voice.
+- **Delivery is written beside every line**, in the body: what the speaker is doing just before it, then how it comes out (pitch, volume, pace, breath, where it breaks or pauses, what they want from the other person), then what their face does after. "says, voice tight but not shouting, <d>...</d> pausing as if the number burns" works; "says sadly" does not.
+- **One action at a time.** Erratic movement comes from beats crowded together: give each physical action its own clause and its own second or two, and say who is still while it happens.
+- The runner writes the rest of the six-part prompt (subject definitions, voices, retention analysis, the style with a texture sentence, the first-person sentence, a performance and a movement paragraph, soundscape with a dialogue-mix sentence, "no music") from the film file, and numbers the reference images `<Picture 1>`, `<Picture 2>` in the order people, place, extra views, previous last frame.
 - There is no negative prompt in H3. Say what should be there ("bare painted walls") instead of what should not.
 - **The 8,000 rule**: the shot's Chinese layer (place block, setup, stages, ending, notes, must and must-not lists) plus its `h3.summary` and `h3.body` must reach 8,000, a Chinese character counting one and an English word one. `film.py check` prints both parts for every shot.
 - A shot runs 5 to 15 seconds on this engine.

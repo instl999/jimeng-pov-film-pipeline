@@ -47,7 +47,8 @@ for n, path in enumerate(cast.values()):               # stand-in pictures; a re
                     os.path.join(proj, path)], check=True)
 filler = "镜头贴着柜台的前沿缓缓向右移，台面上的印台、圆珠笔和单据依次滑过画面下沿，日光灯的青色落在玻璃隔断的指印上。"
 body = ("The camera drifts right along the worn counter edge at a slow walking pace while {柜员} keeps writing behind the glass and "
-        "{小红} waits at the right shoulder, her red scarf the only saturated colour in {证券营业部柜台}. ") * 9
+        "{小红} waits at the right shoulder, her red scarf the only saturated colour in {证券营业部柜台}. ") * 9 + \
+    "{小红} (S1) hums under her breath and the protagonist (S2) clears his throat."
 
 
 def shot(sid, seconds, chain):
@@ -66,7 +67,8 @@ film = {"title": "rehearsal", "episode": "E01", "premise": ["排练", "不花钱
         "hands": {"2001": "三十岁男性的双手；深蓝色旧棉夹克的袖口。"},
         "hands_en": {"2001": "a thirty-year-old man's hands, short nails, the frayed cuffs of an old navy cotton jacket, bare wrists."},
         "lead_voice": "三十岁男声，低平，慢", "props": {},
-        "people": {"小红": {"images": {"默认": cast["小红"]}, "body": "二十六岁左右的女性，披肩黑发，正红色围巾，米白呢大衣。", "voice": "年轻女声，轻", "en": "a woman of about twenty-six with shoulder-length black hair, a red knitted scarf and a cream wool coat."},
+        "lead_voice_en": "a thirty-year-old man's low, level, slow voice.",
+        "people": {"小红": {"images": {"默认": cast["小红"]}, "body": "二十六岁左右的女性，披肩黑发，正红色围巾，米白呢大衣。", "voice": "年轻女声，轻", "voice_en": "a light young woman's voice, quick Mandarin.", "en": "a woman of about twenty-six with shoulder-length black hair, a red knitted scarf and a cream wool coat."},
                    "柜员": {"images": {"默认": cast["柜员"]}, "en": "a bank teller of about twenty-five with a low ponytail, a white shirt and a navy uniform vest."}},
         "places": {"证券营业部柜台": {"master": "日·竖·柜台", "views": {"日·竖·柜台": {"image": cast["证券营业部柜台"]}}, "sound": "<大厅里低低的人声>",
                                  "block": ["空间：" + filler * 4, "光：" + filler, "背景里的人：" + filler], "en": "the ground-floor hall of a 1990s securities office with a long counter behind glass.",
@@ -99,12 +101,20 @@ try:
     write(bad)
     rc, out = run("check", proj)
     check("a line missing from the H3 prompt is caught", rc != 0 and "word for word" in out, out[-300:])
+    mute = json.loads(json.dumps(film))
+    del mute["people"]["小红"]["voice_en"]
+    write(mute)
+    rc, out = run("check", proj)
+    check("a speaker with no English voice is caught", rc != 0 and "has no \"voice_en\"" in out, out[-300:])
     write(film)
     rc, out = run("check", proj)
     check("the full film passes", rc == 0, out[-600:])
     text = open(os.path.join(proj, "shots", "E01.md"), encoding="utf-8").read()
     check("the shot file carries the H3 prompt in its six parts",
           all(k in text for k in ("subject_definitions:", "summary:", "retention_analysis:", "detailed_description:", "overall_soundscape:", "non_diegetic_music:")))
+    check("each voice is described, the lead's in the same words every shot",
+          "(S1) is the voice of <Subject 2>: a light young woman's voice" in text and "(S2) is the protagonist's own voice" in text)
+    check("performance, movement and texture lines are added", all(k in text for k in ("Performance:", "Movement:", "Image: sharp")))
     check("people and place became <Subject N> / <Picture N>", "<Subject 3> is the location in <Picture 3>" in text and "{" not in text.split("```text")[1].split("```")[0])
     check("the chained shot starts from the previous last frame", "[keyframe completion + reference generation]" in text and "<Picture 4> is the first frame" in text)
     # 2. nothing without sign-off, nothing without --run
@@ -153,7 +163,29 @@ try:
     check("the rental is in the ledger, released", len(ledger) == 1 and ledger[0]["released"] and ledger[0]["price"] == 8.8)
     rc, out = run("status", proj)
     check("status shows the GPU spend", "GPU time:" in out, out[-200:])
-    # 4. a failure on the server still gives the GPU back
+    # 4. a GPU made by a create whose answer was lost is found and given back
+    import urllib.request
+    urllib.request.urlopen("http://127.0.0.1:%d/mock/lose_create" % port).read()
+    probe = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, %r); import autodl\n"
+                            "try:\n    autodl.up('mockapp', 'pro6000-p', 8.8, 1, name='lost')\nexcept autodl.AutoDLError as e:\n    print('refused:', e)" % TOOLS],
+                           env=env, capture_output=True, text=True)
+    ledger = [json.loads(l) for l in open(os.path.join(home, "autodl.ledger.jsonl"), encoding="utf-8")]
+    check("a GPU made without an answer is found by its name and given back",
+          "refused:" in probe.stdout and ledger[-1]["why"] == "created without an answer" and ledger[-1]["released"]
+          and not os.path.exists(os.path.join(home, "autodl.state.json")), probe.stdout[-300:] + probe.stderr[-300:])
+    # 5. another program's GPU is never given back by this one
+    with open(os.path.join(home, "autodl.state.json"), "w") as handle:
+        json.dump({"uuid": "pro-other", "app": "mockapp", "gpu": "pro6000-p", "price": 8.8, "cap": 5, "created": time.time(),
+                   "last_used": time.time(), "comfy": "", "pid": server.pid}, handle)
+    with open(log, "w"):
+        pass
+    rc, out = run("draft", proj, "--only", "S01", "--run")
+    held = json.load(open(os.path.join(home, "autodl.state.json")))
+    calls = [json.loads(l)["path"] for l in open(log, encoding="utf-8")]
+    check("a GPU held by another running program is left alone", rc != 0 and "in use by another program" in out and held["uuid"] == "pro-other"
+          and not any("power_off" in c or "release" in c for c in calls), out[-300:])
+    os.remove(os.path.join(home, "autodl.state.json"))
+    # 6. a failure on the server still gives the GPU back
     broken = json.loads(json.dumps(film))
     broken["scenes"][0]["shots"][0]["seconds"] = 11
     broken["scenes"][0]["shots"][0]["stages"][0]["seconds"] = 7

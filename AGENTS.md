@@ -171,7 +171,7 @@ python3 series/tools/film.py images $P          # lists what is missing and the 
 python3 series/tools/film.py images $P --run
 ```
 
-Open every image and look at it. A person: one person, consistent across the views on the sheet, the garment as written, no text. A place: seen from where the protagonist stands, upright, the furniture where the block says, no people unless written, no readable text. If one is wrong, fix its description in `film.json`, delete the image file and its `cast/<name>.md`, run `check` and `images --run` again. Two retries at most, then tell the owner.
+The first time anything is made on Jimeng for a film, `film.py` gives the film's folder its own Jimeng canvas (`jimeng-novel init`, free; it writes `.jimeng/config.json`). Open every image and look at it. A person: one person, consistent across the views on the sheet, the garment as written, no text. A place: seen from where the protagonist stands, upright, the furniture where the block says, no people unless written, no readable text. If one is wrong, fix its description in `film.json`, delete the image file and its `cast/<name>.md`, run `check` and `images --run` again. Two retries at most, then tell the owner.
 
 ### Step 7. Optional: a free preview
 
@@ -214,8 +214,13 @@ python3 series/tools/film.py draft $P --only S05 --run
 | The room is different from the previous shot | continuity | Keep the place block identical; make sure the shot chains from the previous last frame |
 | The camera is on the wrong side (behind the counter) | the camera | Say in `setup` what lies beyond his hands and which way he faces |
 | The model drew subtitles or music | the tail | Make sure the shot was built by `film.py` (it adds the no-music and no-subtitle sentences); re-run |
+| `qc` says `tail=fail`: the clip fades to black at its end | the tail | Fail it and re-run. The series never ends a shot on black, and a film has no black end card unless the owner asks (`end_card`) |
+| H3: a line comes out flat, or a voice changes between shots | the voice | Check the speaker's `voice_en` (and `lead_voice_en`) is specific; write the delivery beside the line: the action before it, pitch, volume, pace, where it breaks, the look after |
+| H3: people move in jerks or do several things at once | the stage | One action per clause with its own second or two; say who is still meanwhile; cut any gesture the shot does not need |
 | A face fills the frame and looks wrong | the framing | Back to chest-up; name what stands behind the person |
 | The protagonist's voice pitch stands out in `qc` | the voice | Listen. If it is a shouted line, it may be right. Otherwise re-run that shot |
+| H3: a seated person stands up | the stage | Say they stay seated where they enter and again at their big beat |
+| H3: the protagonist's thighs at the bottom of the frame | the camera | Keep the view level; say what fills the bottom edge ("the front edge of the desk, with the keyboard and his two hands on it"); never "the view lowers with" someone |
 | The generator refuses the shot | the staging | Restage the beat more plainly; tell the owner what you changed |
 
 A shot gets three tries. After that, stop spending on it and describe the problem to the owner.
@@ -284,11 +289,12 @@ The example film (152 seconds, 15 shots) is about 3,950 credits at 720p with 30%
 
 ## 7. The second engine: MiniMax H3 on a rented GPU
 
-A film can be made with MiniMax H3 in ComfyUI on a GPU rented by the minute from AutoDL Art, instead of Seedance on Jimeng: about 0.45 yuan for a 10-second clip. By default it rents autodl.art app 252 ("MINIMAX-H3提速500高画质") and runs its saved workflow U22 (multi-reference to video); the runner sets this up by itself. Use the engine only when the owner asks for it. It is newer and less proven here: four test clips, no full film yet, and its acting was weaker than Seedance's on the same shot.
+A film can be made with MiniMax H3 in ComfyUI on a GPU rented by the minute from AutoDL Art, instead of Seedance on Jimeng: about 0.45 yuan for a 10-second clip. By default it rents autodl.art app 252 ("MINIMAX-H3提速500高画质") and runs its saved workflow U22 (multi-reference to video); the runner sets this up by itself. Use the engine only when the owner asks for it. It is newer and less proven here: one whole episode (8 shots, 95 s, ¥13.42 of GPU time, 13 takes for 8 shots) and a 12-take bench against Seedance 2.5. Staging and lines come out close to 2.5 since U22's style LoRA was turned off (now the default); the lead's voice changes from shot to shot, which 2.5 does not do. What failed and what fixed it is in `series/FORMAT.md`, "The first whole episode on H3"; read it before writing H3 prompts.
 
-- Set `"engine": "h3"` and the `"h3"` block in `film.json`; give every shot an `h3.summary` and `h3.body` in English, every person and place an `en` line. All of it is in `series/FILM.md`, "The H3 engine". A complete example prompt is `series/h3-test/prompt.txt`.
+- Set `"engine": "h3"` and the `"h3"` block in `film.json`; give every shot an `h3.summary` and `h3.body` in English, every person and place an `en` line, every speaker a `voice_en` and the lead a `lead_voice_en` (the same words in every shot). Write how each line is delivered beside it, and one physical action at a time. All of it is in `series/FILM.md`, "The H3 engine". A complete example prompt is `series/h3-test/prompt.txt`.
 - **The floor is 8,000 per shot**: the Chinese layer plus the English H3 prompt. The Chinese layer comes first; the H3 prompt is distilled from it, 350 to 500 English words.
 - The owner provides an AutoDL developer token; save it to `~/.config/jimeng-series/autodl.token` with mode 600. `film.py draft --run` rents the GPU, generates, and gives it back. Afterwards run `python3 series/tools/autodl.py list` and confirm it says 0 instances.
+- The link to a rented server is slow uphill (1 to 3 KB/s) and fast downhill. The runner works around it: references go to Jimeng's picture CDN first and the server fetches them (`h3.refs`, default `"jimeng"`); a fetch that times out is sent again (nothing is generated twice); clip downloads resume where they broke off. A chained last frame is the one picture that still goes up after the GPU is rented, about 20 s.
 - H3 has no negative prompt. Say what should be there ("bare painted walls", "a plain cover") instead of what should not.
 - Check the licence before the owner publishes an H3-made film for money (`FORMAT.md`, "Two engines").
 

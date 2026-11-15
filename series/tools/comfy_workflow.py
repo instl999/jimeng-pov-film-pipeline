@@ -176,10 +176,70 @@ def _find(graph, cls, title=None):
     return hits
 
 
-def fill_u22(wf, info, prompt, seconds, images, seed, portrait=True, prefix="film/h3"):
+TUNING = {
+    # knob: what it changes in U22 (all optional; U22's own value when left out)
+    "style_lora": "strength of the style LoRA U22 carries (MysticXXX, 0.5); 0 switches it off",
+    "turbo": "False switches off the speed LoRA (minimax_h3_turbo); then give more steps. A number sets its strength (U22: 1.0)",
+    "steps": "total sampling steps of the first pass scheduler (U22: 12)",
+    "first_steps": "where the steps split between the first pass and the refine pass (U22: 8)",
+    "upscale": "the second pass's size multiplier (U22: 1.5)",
+    "megapixels": "size of the first pass (U22: 0.5)",
+    "sampler": "sampler name (U22: euler)",
+    "scheduler": "scheduler name (U22: beta)",
+    "upscaler": "the model of the latent upscale between the two passes (U22: minimax_h3_latent_upscaler_3d_fp16); "
+                "the server also has h3_upscaler_sharpness_2000steps_v0.1_fp32 (the default since 2026-11-14; the "
+                "clean_latent_upscaler_film file does not load in this node)",
+}
+
+
+def tune_u22(wf, tuning):
+    """Apply TUNING knobs to a saved U22 workflow, in the editor form, before conversion."""
+    unknown = set(tuning) - set(TUNING)
+    if unknown:
+        raise WorkflowError("unknown U22 setting(s): %s (known: %s)" % (", ".join(sorted(unknown)), ", ".join(TUNING)))
+    for n in wf["nodes"]:
+        t, w = n["type"], n.get("widgets_values")
+        if t == "LoraLoaderModelOnly" and isinstance(w, list) and w:
+            name = str(w[0])
+            if "style_lora" in tuning and "Mystic" in name:
+                n["mode"] = 4 if not tuning["style_lora"] else 0
+                w[1] = tuning["style_lora"] or w[1]
+            if "turbo" in tuning and "turbo" in name.lower():
+                n["mode"] = 0 if tuning["turbo"] else 4
+                if not isinstance(tuning["turbo"], bool) and tuning["turbo"]:
+                    w[1] = float(tuning["turbo"])
+        if t == "BasicScheduler" and isinstance(w, list):
+            if "scheduler" in tuning:
+                w[0] = tuning["scheduler"]
+            if "steps" in tuning:
+                w[1] = int(tuning["steps"])
+        if t == "SplitSigmas" and isinstance(w, list) and "first_steps" in tuning:
+            w[0] = int(tuning["first_steps"])
+        if t == "KSamplerSelect" and isinstance(w, list) and "sampler" in tuning:
+            w[0] = tuning["sampler"]
+        if t == "easy float" and isinstance(w, list) and "upscale" in tuning:
+            w[0] = float(tuning["upscale"])
+        if t == "MinimaxH3LatentUpscaler3D" and isinstance(w, list) and w and "upscaler" in tuning:
+            w[0] = tuning["upscaler"]
+        if t == "ResolutionSelector" and isinstance(w, list) and "megapixels" in tuning:
+            w[1] = float(tuning["megapixels"])
+    return wf
+
+
+ADDRESS = ("http://", "https://", "file://", "data:")
+
+
+def is_address(image):
+    """True when a reference is an address the server fetches itself (a CDN link, a file already on
+    the server, inline data) rather than the name of an uploaded image."""
+    return isinstance(image, str) and image.startswith(ADDRESS)
+
+
+def fill_u22(wf, info, prompt, seconds, images, seed, portrait=True, prefix="film/h3", tuning=None):
     """The U22 multi-reference workflow with one shot filled in. images: names already uploaded, at
-    most 9, in <Picture 1> order. -> graph ready to queue."""
-    wf = copy.deepcopy(wf)
+    most 9, in <Picture 1> order. tuning: TUNING knobs. -> graph ready to queue."""
+    own_upscaler = next((n["widgets_values"][0] for n in wf["nodes"] if n["type"] == "MinimaxH3LatentUpscaler3D" and n.get("widgets_values")), None)
+    wf = tune_u22(copy.deepcopy(wf), tuning or {})
     nodes = {n["id"]: n for n in wf["nodes"]}
     links = {l[0]: l for l in wf["links"]}
     # the image slots: LoadImage -> SetNode "图像k"
@@ -224,6 +284,17 @@ def fill_u22(wf, info, prompt, seconds, images, seed, portrait=True, prefix="fil
         if not upright:
             raise WorkflowError("U22: the size node has no 9:16 choice (%s)" % ", ".join(choices))
         sel["aspect_ratio"] = upright
+    for v in graph.values():                                # a reference given as an address is fetched by the server itself
+        if v["class_type"] == "LoadImage" and is_address(v["inputs"].get("image", "")):
+            if "LoadImageFromUrl" not in info:
+                raise WorkflowError("U22: a reference is an address (%s...) but the server has no LoadImageFromUrl node" % v["inputs"]["image"][:40])
+            v["class_type"], v["inputs"] = "LoadImageFromUrl", {"image": v["inputs"]["image"], "keep_alpha_channel": False, "output_mode": False}
+    for v in graph.values():                                # an upscaler the server does not have: U22's own, not a failed shot
+        if v["class_type"] == "MinimaxH3LatentUpscaler3D" and own_upscaler:
+            spec = info.get("MinimaxH3LatentUpscaler3D", {}).get("input", {}).get("required", {}).get("model_name") or []
+            have = spec[0] if spec and isinstance(spec[0], list) else (spec[1].get("options", []) if len(spec) > 1 and isinstance(spec[1], dict) else [])
+            if have and v["inputs"].get("model_name") not in have:
+                v["inputs"]["model_name"] = own_upscaler
     saved = [k for k in _find(graph, "VHS_VideoCombine") if graph[k]["inputs"].get("save_output")]
     if len(saved) != 1:
         raise WorkflowError("U22: expected one saved video output, found %d" % len(saved))

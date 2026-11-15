@@ -7,6 +7,7 @@ a note. Exits 0 when the converted graph is what the editor would run.
     python3 series/tools/tests/test_comfy_workflow.py
 """
 import os
+import json
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -96,5 +97,23 @@ try:
     check("a node the server lacks is refused, not skipped", False)
 except cw.WorkflowError:
     check("a node the server lacks is refused, not skipped", True)
+web = dict(INFO, LoadImageFromUrl={"input": {"required": {"image": ["STRING", {}]}}, "output": ["IMAGE", "MASK", "BOOLEAN"]})
+g2 = cw.fill_u22(WF, web, "p", 5, ["https://cdn.example/a.png", "up2.png"], 1)
+check("a reference given as an address is fetched by the server", g2["1"]["class_type"] == "LoadImageFromUrl" and g2["1"]["inputs"]["image"] == "https://cdn.example/a.png"
+      and g2["3"]["class_type"] == "LoadImage" and g2["11"]["inputs"]["ref_images.ref_image_0"] == ["1", 0])
+try:
+    cw.fill_u22(WF, INFO, "p", 5, ["file:///root/a.png"], 1)
+    check("an address without the loader node is refused", False)
+except cw.WorkflowError:
+    check("an address without the loader node is refused", True)
+knobs = {"nodes": [{"id": 1, "type": "LoraLoaderModelOnly", "widgets_values": ["minimax/minimax_h3_turbo_v4.safetensors", 1.0]},
+                  {"id": 2, "type": "LoraLoaderModelOnly", "widgets_values": ["MysticXXX.safetensors", 0.5]},
+                  {"id": 3, "type": "MinimaxH3LatentUpscaler3D", "widgets_values": ["minimax_h3_latent_upscaler_3d_fp16.safetensors", "scale by multiplier", 2]}],
+         "links": []}
+tuned = cw.tune_u22(json.loads(json.dumps(knobs)), {"turbo": 0.8, "style_lora": 0, "upscaler": "h3_upscaler_sharpness.safetensors"})
+check("turbo strength, style LoRA off and the upscaler model are set",
+      tuned["nodes"][0]["widgets_values"][1] == 0.8 and tuned["nodes"][0].get("mode", 0) == 0 and tuned["nodes"][1]["mode"] == 4
+      and tuned["nodes"][2]["widgets_values"][0] == "h3_upscaler_sharpness.safetensors")
+check("turbo False still bypasses the speed LoRA", cw.tune_u22(json.loads(json.dumps(knobs)), {"turbo": False})["nodes"][0]["mode"] == 4)
 print("all steps hold" if not failures else "%d failed" % len(failures))
 sys.exit(1 if failures else 0)

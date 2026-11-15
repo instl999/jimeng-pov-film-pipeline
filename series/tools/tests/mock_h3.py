@@ -72,13 +72,18 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         path = url.path
         ok = lambda data=None: self.answer({"code": "Success", "data": data, "msg": "", "request_id": "mock"})    # noqa: E731
+        if path == "/mock/lose_create":                       # test control: the next create loses its answer
+            S["lose_create"] = True
+            return self.answer({"ok": True})
         # ---- AutoDL Art
         if path.startswith("/api/v1/adl_dev/"):
             if not self.headers.get("Authorization"):
                 return self.answer({"code": "AuthorizeFailed", "data": None, "msg": "no token"})
             name = path.rsplit("/", 1)[-1]
             if name == "create":
-                S.update(instance="pro-mock0001", polls=0, state="starting")
+                S.update(instance="pro-mock0001", polls=0, state="starting", name=(body or {}).get("instance_name"))
+                if S.pop("lose_create", False):             # made, but the answer never arrives
+                    return self.answer(b"gateway timeout", 504, "text/plain")
                 return ok(S["instance"])
             if name == "status":
                 if S["state"] == "starting":
@@ -97,7 +102,8 @@ class Handler(BaseHTTPRequestHandler):
                 S.update(instance=None, state="none")
                 return ok()
             if name == "list":
-                return ok({"list": [{"uuid": S["instance"], "status": S["state"]}] if S["instance"] else [], "result_total": 1 if S["instance"] else 0})
+                return ok({"list": [{"uuid": S["instance"], "status": S["state"], "name": S.get("name")}] if S["instance"] else [],
+                           "result_total": 1 if S["instance"] else 0})
             return self.answer({"code": "NotFound", "data": None, "msg": path})
         # ---- ComfyUI (only while the "instance" runs)
         if S["state"] != "running":

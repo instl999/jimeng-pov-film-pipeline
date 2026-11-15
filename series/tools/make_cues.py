@@ -140,6 +140,10 @@ def main():
             if i + 1 < len(spoken):
                 stop = min(stop, max(spoken[i + 1][0], lo) - GAP)
             stop = min(stop, hi)
+            if stop - start < 0.2 and i + 1 == len(spoken) and bar:   # a short last word at the very end of a clip
+                start = max(hi - 0.45, bar[-1]["t"][0] + 0.3)         # takes a little time from the line before it
+                bar[-1]["t"][1] = round(min(bar[-1]["t"][1], start - GAP), 2)
+                stop = hi
             if stop - start < 0.2:
                 fail("%s (%s): line %d %r has no room on screen (%.2f-%.2f); check the trim" % (where, clip, i + 1, text, start, stop))
             parts = text.split(" ") if split_over and len(text.replace(" ", "")) > split_over and " " in text else [text]

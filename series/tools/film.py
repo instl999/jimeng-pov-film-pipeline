@@ -102,6 +102,16 @@ class Film:
 
     def save_state(self):
         os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
+        try:                                            # a verdict recorded by `review` while a batch runs is kept,
+            with open(self.state_path, encoding="utf-8") as handle:   # unless the batch has since made a new take
+                disk = json.load(handle).get("shots", {})
+        except (OSError, ValueError):
+            disk = {}
+        for sid, there in disk.items():
+            here = self.state["shots"].get(sid)
+            if here is not None and there.get("reviewed_at", 0) > here.get("reviewed_at", 0) and there.get("tries") == here.get("tries"):
+                here["reviewed_at"], here["status"] = there["reviewed_at"], there.get("status", here.get("status"))
+                here.setdefault("checks", {})["look"] = there.get("checks", {}).get("look")
         with open(self.state_path, "w", encoding="utf-8") as handle:
             json.dump(self.state, handle, ensure_ascii=False, indent=1)
 
@@ -590,9 +600,38 @@ def refuse_unsigned(film, run, shots=None, images=None):
 
 
 # ------------------------------------------------------------------ talking to the generator
+def bound(folder):
+    """True when this folder (or one above it) is bound to a Jimeng canvas."""
+    folder = os.path.abspath(folder)
+    while True:
+        if os.path.isfile(os.path.join(folder, ".jimeng", "config.json")):
+            return True
+        up = os.path.dirname(folder)
+        if up == folder:
+            return False
+        folder = up
+
+
+def bind(film):
+    """A new film folder gets its own canvas the first time anything is made on Jimeng. Making a
+    canvas costs nothing."""
+    if bound(film.project):
+        return True
+    title = "".join(film.d.get("premise") or []) or os.path.basename(os.path.abspath(film.project))
+    title = "%s %s" % (title, film.episode) if film.episode not in title else title
+    done = subprocess.run(["jimeng-novel", "init", "--title", title[:40]], cwd=film.project, capture_output=True, text=True, timeout=120)
+    if done.returncode != 0 or not bound(film.project):
+        print("  could not make a Jimeng canvas for this film: %s" % (done.stdout + done.stderr).strip()[-200:])
+        return False
+    print("  made a Jimeng canvas for this film: %s" % title[:40])
+    return True
+
+
 def cli(film, args, timeout=180, tries=1):
     """Run jimeng-novel inside the project. -> (exit code, text). Read-only calls may be retried."""
     out = ""
+    if args[:1] != ["init"] and not bound(film.project) and not bind(film):
+        return 1, "this folder is not bound to a Jimeng canvas"
     for attempt in range(tries):
         try:
             done = subprocess.run(["jimeng-novel"] + args, cwd=film.project, capture_output=True, text=True, timeout=timeout)
@@ -790,6 +829,22 @@ def pitch_of(clip, start, end):
     return found[len(found) // 2] if len(found) >= 3 else None
 
 
+def black_tail(clip, dur):
+    """-> the second a clip starts fading to black at its end, or None. Both models sometimes close a
+    clip on a fade-out; the series never does (no black tail, no end card by default), so such a take
+    is failed and redone rather than cut into the film."""
+    start = max(0.0, dur - 2.0)
+    out = subprocess.run([FFMPEG, "-v", "error", "-ss", "%.2f" % start, "-i", clip, "-vf",
+                          "fps=12,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"],
+                         capture_output=True, text=True).stdout
+    luma = [float(v) for v in re.findall(r"YAVG=([\d.]+)", out)]
+    if len(luma) < 6 or max(luma[:6]) < 30 or luma[-1] >= 22:
+        return None                                       # too short to tell, a dark shot throughout, or no black at the end
+    top = max(luma[:6])
+    first = next((i for i, v in enumerate(luma) if v < top * 0.6 and all(w < top * 0.6 for w in luma[i:])), None)
+    return None if first is None else round(start + first / 12.0, 1)
+
+
 def qc_shot(film, sc, sh):
     """Machine checks for one clip: length, lines, the lead's pitch; plus a frame sheet and checklist."""
     sid, st = sh["id"], film.shot_state(sh["id"])
@@ -802,12 +857,18 @@ def qc_shot(film, sc, sh):
     dur = float(subprocess.run([FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", clip],
                                capture_output=True, text=True).stdout.strip() or 0)
     checks["length"] = "pass" if abs(dur - sh["seconds"]) <= 0.3 else "fail(%.1fs)" % dur
+    fade = black_tail(clip, dur)
+    checks["tail"] = "pass" if fade is None else "fail(fades to black from %.1fs)" % fade
     name = sh.get("take", sid)
     srt = film.path("post", "srt", name + ".srt")
     os.makedirs(os.path.dirname(srt), exist_ok=True)
     parts = film.subtitle_parts(sh)
     if parts:
-        rc, out = cli(film, ["transcribe", os.path.relpath(clip, film.project), "--text-file", "post/lines/%s.txt" % sid,
+        sound = film.path("post", "audio", name + ".m4a")      # only the sound goes up: a clip is 3-8 MB, its sound 60 KB
+        os.makedirs(os.path.dirname(sound), exist_ok=True)
+        done = subprocess.run([FFMPEG, "-v", "error", "-y", "-i", clip, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "48k", sound])
+        heard = sound if done.returncode == 0 and os.path.isfile(sound) else clip
+        rc, out = cli(film, ["transcribe", os.path.relpath(heard, film.project), "--text-file", "post/lines/%s.txt" % sid,
                              "--srt", os.path.relpath(srt, film.project), "--wait", "150"], timeout=240, tries=2)
         m = re.search(r"(\d+) 行对上，(\d+) 行没对上，(\d+) 段多出来的语音", out)
         digits = str.maketrans("0123456789", "零一二三四五六七八九")      # the recogniser writes numbers out
@@ -864,6 +925,7 @@ def cmd_review(film, sid, verdict, why):
     st = film.shot_state(sid)
     st.setdefault("checks", {})["look"] = verdict + ("(%s)" % why if why else "")
     st["status"] = "accepted" if verdict == "pass" else "failed"
+    st["reviewed_at"] = time.time()
     film.save_state()
     print("%s: %s" % (sid, st["checks"]["look"]))
     return 0

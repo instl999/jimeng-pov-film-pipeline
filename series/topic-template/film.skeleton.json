@@ -16,10 +16,7 @@
   "premise_seconds": 7,
   "date_seconds": 4
  },
- "end_card": {
-  "seconds": 2,
-  "text": "<片尾一行字，不要就写 null>"
- },
+ "end_card": null,
  "styles": {
   "cold": "<冷调风格句：年代、胶片质感、色调、光。一句话>",
   "warm": "<暖调风格句>",

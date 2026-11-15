@@ -216,7 +216,7 @@ A film is made with one of two engines, named in `film.json` as `"engine"`. Imag
 
 The H3 engine rents **autodl.art app 252, "MINIMAX-H3提速500高画质"** (application id `spcwDDc6XW`) and runs its saved workflow **U22, "MiniMaxH3 多参考生视频 优化版"** (by YZ金鱼). The app ships three files numbered U22; the runner uses `U22-MiniMaxH3-多参考生视频-优化版-YZ金鱼.json`, the complete multi-reference one: up to 9 reference images, a prompt, a length, then a first pass at 0.5 MP and a second pass at 1.5× (832×1440), with its own turbo and style LoRAs. `h3.app`, `h3.version` and `h3.workflow` in `film.json` override these.
 
-How it is run: the runner downloads the workflow from the rented server each time, converts it from the editor's saved form into a runnable graph (`series/tools/comfy_workflow.py`: Set/Get pairs, reroutes and bypassed slots resolved; widget values named from the server's own node definitions), switches on one image slot per reference, writes the shot's prompt, length, seed and the upright 9:16 size into it, and keeps the one video the workflow saves. A re-saved or updated U22 still works as long as it keeps its parts; if one is missing the run stops and names it. `tests/test_comfy_workflow.py` tests the conversion offline.
+How it is run: the runner downloads the workflow from the rented server once and keeps a copy on disk (fetched again if the server refuses it), converts it from the editor's saved form into a runnable graph (`series/tools/comfy_workflow.py`: Set/Get pairs, reroutes and bypassed slots resolved; widget values named from the server's own node definitions), switches on one image slot per reference, writes the shot's prompt, length, seed and the upright 9:16 size into it, and keeps the one video the workflow saves. A re-saved or updated U22 still works as long as it keeps its parts; if one is missing the run stops and names it. `tests/test_comfy_workflow.py` tests the conversion offline.
 
 Measured on a PRO6000-96G, 2026-11-13, with the same prompt and references as the tests below:
 
@@ -228,6 +228,46 @@ Measured on a PRO6000-96G, 2026-11-13, with the same prompt and references as th
 | GPU cost of a 10-second clip | about ¥1.5 | **about ¥0.45** |
 
 The first film's 15 shots would take about 1 hour 10 minutes of GPU time with U22, about ¥10 with 30% re-takes. Frame sheets of both U22 test clips are `series/h3-test/u22-7s-frames.jpg` and `u22-10s-frames.jpg`: same shot, both lines in their place, the girlfriend's reaction closer to the written disbelief than the plain graph gave. Watch the first frame: the protagonist's shoes showed at the bottom edge in one take.
+
+### Smoothing, jerky movement and flat lines on H3 (2026-11-14, evening)
+
+The owner's notes on the first H3 episode: the picture looks a little over-smoothed, people sometimes move erratically, and the lines lack emotional weight. What U22 does, read from its graph: the H3 model in int8 with the 4-step turbo LoRA at full strength, 12 steps in all (8 at 0.5 megapixels, then a latent upscale by 1.5 and 4 more), Euler, beta schedule, and a plain guider with no CFG. The H3 node gives positive conditioning only, so CFG cannot be added. Turbo and few steps are the usual cause of waxy skin and of motion that lurches; four refine steps at low noise cannot put back texture the latent upscale smoothed.
+
+- **The voices never reached the model.** `people.voice` and `lead_voice` were Chinese and only used for Jimeng; the H3 prompt named `(S1)`, `(S2)` and nothing more, so the model invented every voice, the unseen lead's anew in every shot. Now every speaker has `voice_en`, the lead has `lead_voice_en` (the same words in every shot), and the runner writes "(S1) is the voice of <Subject 1>: ..." into the subject definitions. `check` refuses a voice it cannot place.
+- **Fixed paragraphs in every prompt**: performance (feeling carried in the voice: breath, pause, a crack), movement (real-life speed, one action at a time, still between actions, the camera turning like a head) and texture (pores, fine lines, fabric weave, fine grain), plus a dialogue-mix sentence in the soundscape. They are the same in every shot and are not counted toward the 8,000.
+- **A light finish on every H3 clip** (`h3.post`, default sharpen 0.5, grain 5) when it is fitted to length: smoothing reads as film. It adds no detail.
+- **Two new U22 knobs**: `turbo` as a strength, and `upscaler`, the model between the passes; the server carries a sharpness-trained latent upscaler besides U22's own (a "clean film" one is listed but its weights do not fit the node).
+- **The black end card is gone by default**, on both engines: `end_card` is `null`, the film ends on its last frame. `qc` also fails any clip that fades to black at its end (`tail`).
+
+**The bench** (`films/bitcoin-2010/E01/h3bench2`, not committed): S03 (the mother's three lines at the dinner table, 12 s) and S02 (大刘 laughing and shouting across the café, 8 s), one fixed seed per shot so that takes differ only by the setting, ¥7.04 of GPU in two rentals. Every one of the 14 takes that rendered said every line word for word. Measured beside the eye: blur and edge density for sharpness, frame-to-frame change for jerky motion, loudness range (EBU R128 LRA) and the spread of voice pitch for how much a delivery moves. For scale, a Seedance 2.5 clip of the first film measured LRA 7.8 and a pitch spread of 19 semitones; the old H3 S03 take 4.9 and 13.
+
+| Change | What it did | Kept |
+|---|---|---|
+| New prompt (voices, performance, movement, texture) | S03: pitch spread 13.1 → 17.1 semitones, the mother's face carries the hurt in the last lines; S02: loudness range 7.7 → 9.9, fewer sudden motion spikes, an arm that swung across the frame stayed out | yes |
+| "Natural, undistorted 35mm lens" instead of "a wide field of view" | less stretching at the frame edges; S02 steadiest of all takes (jerk 0.069) with the widest range (11.8 LU) | yes |
+| Sharpness-trained latent upscaler | a little crisper hair and knit, same GPU time (its apparent speed-up on the first round was ComfyUI reusing the cached first pass) | yes, default |
+| 16 steps (10 + 6) | no visible gain, 35% more GPU | no |
+| Turbo LoRA at 0.8, 16 steps | no texture gain, less pitch movement, more stop-start, 20-30% more GPU | no |
+| "Clean film" latent upscaler | does not load in U22's upscale node | no |
+| `h3.post` sharpen + grain | smoothing reads as film; no new detail | yes, default |
+
+What is left of the gap: the skin is still smoother than Seedance's, because the turbo LoRA at 12 steps sets the look; the only setting that changed it was the full non-turbo run (`{"turbo": false, "steps": 24, "first_steps": 18}`, 1.6 times the GPU), worth it for a hero shot, not for a whole episode. Faces still bulge a little at the edges. Frame sheets: `series/h3-test/bench2/S03.jpg` and `S02.jpg`, one frame per eighth of the clip, rows top to bottom: old prompt, new prompt, new prompt with the sharp upscaler, and with the lens sentence as well (today's default).
+
+### U22 without its style LoRA: the bench of 2026-11-14
+
+U22 as saved adds a style LoRA (MysticXXX at 0.5). Four shots of the first film were each made three ways, U22 as saved, U22 without the style LoRA, and without it at 24 full steps, and set beside the Seedance 2.5 clips. With the LoRA the protagonist's knees and lap came into frame in two of four shots and the girlfriend's alarm was played as a grin; without it every shot kept to his hands and every acting beat landed, as well as at 24 steps but at 60% of the GPU time. So the default is **U22 without the style LoRA** (`h3.tuning` `{"style_lora": 0}`). All 12 takes spoke every line word for word, and every one staged its shot beat for beat as the 2.5 clip did; H3 is still a little wider and softer in faces. Sheets and numbers: `series/h3-test/README.md`. The knobs, should you want to try others (`style_lora`, `turbo`, `steps`, `first_steps`, `upscale`, `megapixels`, `sampler`, `scheduler`), are in `series/tools/comfy_workflow.py`, `TUNING`; `series/tools/h3_bench.py` compares settings the same way.
+
+### The first whole episode on H3 (2026-11-14)
+
+Episode 1 of the Bitcoin series (`examples/bitcoin-2010-develop`), 8 shots, 95 seconds, made start to finish on U22 without the style LoRA: 13 takes in all (S01, S02, S04 first time; S03, S05, S07, S08 second; S06 third), ¥13.42 of GPU time, 28 credits of reference images plus 4 for one remade. The same film on Seedance 2.5 at 720p would be about 2,470 credits with re-takes.
+
+- **Every line word for word** in every passed take, and in 11 of 13 takes overall. The two misses: a last line cut off because the shot was too short for nine lines (S05, made 15 s), and a single-character reply (「嗯」) left out once (S06; said on the next take).
+- **What failed, and the fix that worked**, in order of how often:
+  - The protagonist's thighs at the bottom of the frame when he sits at a desk (S07, S08). The prompt had the view "lower with" a person sitting down. Fixed by keeping the view level and saying what fills the bottom edge: "the bottom edge of the frame is the front edge of the desk, with the keyboard and the protagonist's two hands on it."
+  - A seated person standing up (S03, the mother). The prompt never said she stays seated. Fixed by saying so where she enters and again at her big beat.
+  - Readable text: a doormat with a greeting on it, a liquor bottle given a famous red band. Fixed by naming neither: "a worn, solid plain red rug, one colour all over", "a tall, all-white glazed porcelain bottle, smooth and bare". The word "liquor" alone was enough to bring the band.
+- **The lead's voice is not the same from shot to shot** (pitch 108 to 167 Hz across the episode). H3 makes a new voice for each clip, and the off-screen protagonist has no picture to anchor it. U22 has reference-audio inputs, but reports from people who tried them (2026-11) say the reference often plays through into the clip or garbles the silences, which would break the rule that every line is word for word; not tried here. It is the clearest remaining gap to Seedance 2.5.
+- **Length**: H3 renders 17k+5 frames, up to 0.4 s more than asked, and fills them; a last word often falls in that overhang. The runner now fits the clip to its length by playing it up to 3% faster (pitch kept) instead of cutting, so the last word and the written last frame survive.
 
 ### What the first real H3 clips showed (2026-11-13)
 

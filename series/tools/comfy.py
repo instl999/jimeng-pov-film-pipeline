@@ -23,6 +23,7 @@ Anything the server requires that is not set here is filled in from the server's
 (/object_info), and model file names are chosen from what the server actually has.
 """
 import hashlib
+import http.client
 import json
 import mimetypes
 import os
@@ -70,6 +71,7 @@ class Comfy:
         self.timeout = timeout
         self.client = uuidlib.uuid4().hex
         self._info = {}
+        self._saved = {}
 
     # ---- plain HTTP
     def _open(self, path, data=None, headers=None, timeout=None):
@@ -81,13 +83,20 @@ class Comfy:
         except (urllib.error.URLError, OSError) as err:
             raise ComfyError("%s: %s" % (path.split("?")[0], err))
 
+    def _json(self, path, data=None, headers=None, timeout=None):
+        """One request and its JSON answer. A link that drops while the answer is being read is a
+        ComfyError like any other, never a raw socket error that would end the batch."""
+        try:
+            with self._open(path, data, headers, timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (OSError, http.client.HTTPException, ValueError) as err:
+            raise ComfyError("%s: %s" % (path.split("?")[0], err))
+
     def get(self, path):
-        with self._open(path) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        return self._json(path)
 
     def post(self, path, body):
-        with self._open(path, json.dumps(body).encode("utf-8"), {"Content-Type": "application/json"}) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        return self._json(path, json.dumps(body).encode("utf-8"), {"Content-Type": "application/json"})
 
     # ---- the server
     def wait_ready(self, timeout=600, log=print):
@@ -136,14 +145,14 @@ class Comfy:
 
     def upload(self, path, tries=4):
         """-> the name ComfyUI gave the image (for a LoadImage node). The picture is sent as a JPEG no
-        larger than 1536 pixels a side: the link to a rented server is slow, and the model resizes
+        larger than 1024 pixels a side: the link to a rented server is slow, and the model resizes
         its references anyway."""
         send, temp = path, None
         ffmpeg = env.ffmpeg()
         if os.path.getsize(path) > 600 * 1024 and (os.path.isfile(ffmpeg) or shutil.which(ffmpeg)):
             temp = os.path.join(tempfile.mkdtemp(prefix="comfy-up-"), os.path.splitext(os.path.basename(path))[0] + ".jpg")
             done = subprocess.run([ffmpeg, "-v", "error", "-y", "-i", path, "-vf",
-                                   "scale='min(1536,iw)':'min(1536,ih)':force_original_aspect_ratio=decrease", "-q:v", "3", temp])
+                                   "scale='min(1024,iw)':'min(1024,ih)':force_original_aspect_ratio=decrease", "-q:v", "3", temp])
             send = temp if done.returncode == 0 and os.path.isfile(temp) else path
         boundary = "----film" + uuidlib.uuid4().hex
         name = "film_%s_%s" % (hashlib.sha1(os.path.abspath(path).encode("utf-8")).hexdigest()[:10], "ref" + os.path.splitext(send)[1])
@@ -194,20 +203,81 @@ class Comfy:
                 fill(node["inputs"], field, spec)
         return graph
 
-    def queue(self, graph):
+    def queued_by_us(self):
+        """-> prompt ids this client has waiting, running or finished on the server. Raises
+        ComfyError when the server cannot be asked: an unanswered lookup is not "nothing there"."""
+        ids = []
+        q = self.get("/queue")
+        for item in q.get("queue_running", []) + q.get("queue_pending", []):
+            if len(item) > 3 and isinstance(item[3], dict) and item[3].get("client_id") == self.client:
+                ids.append(item[1])
+        for pid, job in self.get("/history?max_items=20").items():
+            extra = (job.get("prompt") or [None] * 4)
+            if len(extra) > 3 and isinstance(extra[3], dict) and extra[3].get("client_id") == self.client:
+                ids.append(pid)
+        return ids
+
+    def known(self, prompt_id):
+        """-> True when the server has this job (waiting, running or finished). Raises ComfyError
+        when it cannot be asked."""
+        if self.get("/history/" + prompt_id).get(prompt_id):
+            return True
+        q = self.get("/queue")
+        return any(len(item) > 1 and item[1] == prompt_id for item in q.get("queue_running", []) + q.get("queue_pending", []))
+
+    def queue(self, graph, tries=3):
+        """Send the job once. The job carries an id made here, so after a dropped reply the runner
+        asks for exactly that id before sending again, and sends again only when the server has
+        answered that it does not have it. A job is never queued twice, and never mistaken for an
+        earlier one."""
+        prompt_id = str(uuidlib.uuid4())
+        body = json.dumps({"prompt": graph, "client_id": self.client, "prompt_id": prompt_id},
+                          ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         try:
-            answer = self.post("/prompt", {"prompt": graph, "client_id": self.client})
-        except ComfyError as err:
-            raise ComfyError("the server refused the workflow: %s" % err)
+            before = set(self.queued_by_us())               # for a server too old to take our id
+        except ComfyError:
+            before = None
+        for attempt in range(tries):
+            try:
+                answer = self._json("/prompt", body, {"Content-Type": "application/json"}, timeout=300)
+                break
+            except ComfyError as err:
+                if "HTTP 4" in str(err):
+                    raise ComfyError("the server refused the workflow: %s" % err)
+                for look in range(8):                       # did it arrive? ask until the server answers
+                    time.sleep(5 + 5 * look)
+                    try:
+                        if self.known(prompt_id):
+                            return prompt_id
+                        landed = [pid for pid in self.queued_by_us() if before is not None and pid not in before]
+                        if landed:
+                            return landed[0]
+                        if before is None:
+                            raise ComfyError("cannot tell an old server's new job from earlier ones")
+                        break                               # the server says it does not have it: safe to send again
+                    except ComfyError as look_err:
+                        if look == 7 or "old server" in str(look_err):
+                            raise ComfyError("the workflow was sent but the server could not be asked whether it arrived; "
+                                             "not sending it again (%s)" % err)
+                if attempt + 1 == tries:
+                    raise ComfyError("could not send the workflow after %d tries: %s" % (tries, err))
         if answer.get("node_errors"):
             raise ComfyError("the server refused the workflow: %s" % json.dumps(answer["node_errors"], ensure_ascii=False)[:600])
-        return answer["prompt_id"]
+        return answer.get("prompt_id") or prompt_id
 
     def wait(self, prompt_id, timeout=3600, beat=None):
         """-> the output files of a finished job, as ComfyUI describes them."""
-        deadline = time.time() + timeout
+        deadline, misses, gone_since, polls = time.time() + timeout, 0, None, 0
         while time.time() < deadline:
-            job = self.get("/history/" + prompt_id).get(prompt_id)
+            try:                                        # a rented link drops a request now and then; the job runs on
+                job = self.get("/history/" + prompt_id).get(prompt_id)
+                misses = 0
+            except ComfyError:
+                misses += 1
+                if misses >= 20:
+                    raise
+                time.sleep(5)
+                continue
             if job:
                 state = job.get("status", {})
                 if state.get("status_str") == "error":
@@ -216,20 +286,57 @@ class Comfy:
                 if state.get("completed", True) and job.get("outputs"):
                     return [f for out in job["outputs"].values() for group in out.values() if isinstance(group, list)
                             for f in group if isinstance(f, dict) and f.get("filename")]
+                if state.get("completed") and state.get("status_str") == "success":
+                    raise ComfyError("the job finished with no output")
+            else:
+                polls += 1
+                if polls % 6 == 0:                      # every half minute: is it still waiting or running at all?
+                    try:
+                        q = self.get("/queue")
+                        there = any(len(i) > 1 and i[1] == prompt_id for i in q.get("queue_running", []) + q.get("queue_pending", []))
+                        gone_since = None if there else (gone_since or time.time())
+                    except ComfyError:
+                        pass
+                    if gone_since and time.time() - gone_since > 90:
+                        raise ComfyError("the job is gone from the server (neither queued, running nor finished); "
+                                         "the server may have restarted")
             if beat:
                 beat()
             time.sleep(5)
         raise ComfyError("no result after %d s; the job may still be running on the server" % timeout)
 
-    def download(self, entry, dest):
+    def download(self, entry, dest, tries=10):
+        """Save an output file. A rented server's link can drop mid-file: each retry asks for the
+        rest of the file (an HTTP range) instead of starting over."""
         query = urllib.parse.urlencode({"filename": entry["filename"], "subfolder": entry.get("subfolder", ""), "type": entry.get("type", "output")})
-        with self._open("/view?" + query, timeout=600) as resp, open(dest, "wb") as out:
-            while True:
-                chunk = resp.read(1 << 20)
-                if not chunk:
-                    break
-                out.write(chunk)
-        return dest
+        part = dest + ".part"
+        if os.path.exists(part):
+            os.remove(part)
+        for attempt in range(tries):
+            have = os.path.getsize(part) if os.path.exists(part) else 0
+            try:
+                with self._open("/view?" + query, headers={"Range": "bytes=%d-" % have} if have else None, timeout=600) as resp:
+                    if have and resp.status != 206:             # the server ignored the range: start again
+                        have = 0
+                    total = resp.headers.get("Content-Length")
+                    total = have + int(total) if total and total.isdigit() else None
+                    with open(part, "ab" if have else "wb") as out:
+                        while True:
+                            chunk = resp.read(1 << 16)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                if total is None or os.path.getsize(part) >= total:
+                    os.replace(part, dest)
+                    return dest
+            except (ComfyError, OSError, http.client.HTTPException) as err:
+                if have and "HTTP 416" in str(err):         # the whole file had arrived before the link dropped
+                    os.replace(part, dest)
+                    return dest
+                if attempt + 1 == tries:
+                    raise ComfyError("could not download %s after %d tries: %s" % (entry["filename"], tries, err))
+            time.sleep(min(30, 3 * (attempt + 1)))
+        raise ComfyError("could not download %s whole after %d tries" % (entry["filename"], tries))
 
     # ---- MiniMax H3, reference to video
     def h3_models(self):
@@ -278,7 +385,14 @@ class Comfy:
         return self.get("/api/userdata?dir=workflows&recurse=true")
 
     def saved_workflow(self, wanted):
-        """wanted: a file name, or its start ("U22-MiniMaxH3-多参考生视频"). -> (path, workflow)."""
+        """wanted: a file name, or its start ("U22-MiniMaxH3-多参考生视频"). -> (path, workflow).
+        Kept after the first fetch: one server, one copy."""
+        if wanted in self._saved:
+            return self._saved[wanted]
+        self._saved[wanted] = self._fetch_workflow(wanted)
+        return self._saved[wanted]
+
+    def _fetch_workflow(self, wanted):
         names = self.saved_workflows()
         hits = [n for n in names if os.path.basename(n) == wanted or os.path.basename(n).startswith(wanted)]
         if len(hits) != 1:
@@ -299,30 +413,96 @@ class Comfy:
                     raise
         return out
 
-    def u22_clip(self, workflow, prompt, seconds, image_paths, dest, beat=None, log=print, seed=None):
+    # ---- a copy of the saved workflow and its node definitions, kept between rentals (the link is slow)
+    def _kept_path(self, workflow):
+        home = os.environ.get("JIMENG_SERIES_HOME") or os.path.expanduser("~/.config/jimeng-series")
+        return os.path.join(home, "comfy-cache", hashlib.sha1(workflow.encode("utf-8")).hexdigest()[:16] + ".json")
+
+    def _kept(self, workflow):
+        try:
+            with open(self._kept_path(workflow), encoding="utf-8") as handle:
+                kept = json.load(handle)
+            return kept if kept.get("workflow") and kept.get("info") else None
+        except (OSError, ValueError):
+            return None
+
+    def _keep(self, workflow, path, wf, info):
+        target = self._kept_path(workflow)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            json.dump({"path": path, "workflow": wf, "info": info, "saved": time.time()}, handle, ensure_ascii=False)
+
+    def _forget(self, workflow):
+        try:
+            os.remove(self._kept_path(workflow))
+        except OSError:
+            pass
+        self._saved.pop(workflow, None)
+
+
+    def u22_clip(self, workflow, prompt, seconds, image_paths, dest, beat=None, log=print, seed=None, tuning=None):
         """Run the saved U22 workflow for one shot. -> (dest, seed, seconds it took)."""
         import comfy_workflow
         started = time.time()
-        path, wf = self.saved_workflow(workflow)
-        names = [self.upload(p) for p in image_paths]
+        tick = beat or (lambda: None)                   # the setup can take minutes over a rented link: keep the GPU marked busy
+        kept = self._kept(workflow)                     # the workflow and its node definitions, from an earlier rental
+        path, wf = (kept["path"], kept["workflow"]) if kept else self.saved_workflow(workflow)
+        if kept:
+            self._info.update(kept["info"])
+        tick()
+        marks = [("start", started)]
+        names = []
+        for p in image_paths:                           # an address (CDN link, file on the server) is fetched by the server
+            names.append(p if comfy_workflow.is_address(p) else self.upload(p))
+            tick()
         seed = seed if seed is not None else random.randrange(1 << 48)
+        info = self.info_for(wf)
+        if any(comfy_workflow.is_address(n) for n in names):
+            info["LoadImageFromUrl"] = self.node("LoadImageFromUrl")
+        tick()
+        if not kept:
+            self._keep(workflow, path, wf, info)
+        marks.append(("setup", time.time()))
         try:
-            graph = comfy_workflow.fill_u22(wf, self.info_for(wf), prompt, seconds, names, seed)
+            graph = comfy_workflow.fill_u22(wf, info, prompt, seconds, names, seed, tuning=tuning)
         except comfy_workflow.WorkflowError as err:
             raise ComfyError(str(err))
-        job = self.queue(graph)
-        log("  queued %s on %s: %d reference image(s), %s s" % (job[:8], os.path.basename(path), len(names), seconds))
-        files = self.wait(job, beat=beat)
+        for attempt in range(8):
+            try:
+                job = self.queue(graph)
+            except ComfyError as err:
+                if not kept or "refused the workflow" not in str(err):
+                    raise
+                log("  the kept copy of the workflow no longer fits this server; fetching it again")
+                self._forget(workflow)
+                return self.u22_clip(workflow, prompt, seconds, image_paths, dest, beat, log, seed, tuning)
+            log("  queued %s on %s: %d reference image(s), %s s" % (job[:8], os.path.basename(path), len(names), seconds))
+            marks.append(("send", time.time()))
+            try:
+                files = self.wait(job, beat=beat)
+                marks.append(("render", time.time()))
+                break
+            except ComfyError as err:                   # the URL loader gives a slow CDN only 5 s; what it did fetch stays
+                if "LoadImageFromUrl" not in str(err) or "timed out" not in str(err) or attempt == 7:
+                    raise                               # cached on the server, so sending again fetches only the rest
+                log("  a reference was slow to fetch; sending again (nothing was generated)")
+                tick()
         videos = [f for f in files if f["filename"].lower().endswith((".mp4", ".webm", ".mov", ".mkv")) and f.get("type") == "output"]
         if not videos:
             raise ComfyError("the job finished without a saved video file")
         self.download(videos[-1], dest)
+        marks.append(("download", time.time()))
+        log("  timing: " + ", ".join("%s %.0f s" % (marks[i][0], marks[i][1] - marks[i - 1][1]) for i in range(1, len(marks))))
         return dest, seed, time.time() - started
 
     def h3_clip(self, prompt, seconds, image_paths, dest, beat=None, log=print, **options):
         """Upload the references, run the workflow, save the clip. -> (dest, seed, seconds it took)."""
         started = time.time()
-        names = [self.upload(p) for p in image_paths]
+        names = []
+        for p in image_paths:
+            names.append(self.upload(p))
+            if beat:
+                beat()
         graph = self.h3_graph(prompt, seconds, names, **options)
         job = self.queue(graph)
         log("  queued %s: %d frames, %d reference image(s), %d steps" % (job[:8], graph["20"]["inputs"]["length"], len(names), graph["23"]["inputs"]["steps"]))
