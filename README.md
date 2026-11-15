@@ -7,7 +7,7 @@ A pipeline an AI agent can run end to end: you hand it a rough Chinese script, o
 <img src="examples/nvidia-2001/out/E01.cover.4x3.jpg" width="480" alt="4:3 cover of the example film">
 </p>
 
-- **The format**: vertical 1080×1920, first person throughout (the camera is the protagonist's eyes), every scripted line spoken inside the clip and subtitled on a black strip, short text-only narration, no voiceover, no music. Stills: [`examples/nvidia-2001/stills/`](examples/nvidia-2001/stills/).
+- **The format**: vertical 1080×1920, first person throughout (the camera is the protagonist's eyes; an ordinary third-person drama is a setting away), every scripted line spoken inside the clip and subtitled on a black strip, short text-only narration, no voiceover, no music. Stills: [`examples/nvidia-2001/stills/`](examples/nvidia-2001/stills/).
 - **The generator**: Seedance 2.5 through Jimeng's `jimeng-novel` command line (default), or MiniMax H3 (autodl.art app 252, workflow U22) on a GPU rented by the minute.
 - **The text on screen is locked**: six layers with fixed looks and positions, taken from the first film ([`series/text-styles.jpg`](series/text-styles.jpg)).
 - **The guard rails**: the script is followed word for word; nothing is generated until you have signed off the written shot list; spending stops at a cap you set; every clip is checked for its lines by speech recognition and looked at before it is used.

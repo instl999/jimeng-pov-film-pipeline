@@ -37,6 +37,9 @@ POV = ("全程第一人称主观视角单镜头、无剪辑，竖屏画面，镜
        "以下分镜是同一条连续镜头路径上的阶段，不是切镜，不换机位。")
 POV_TAILS = ["主人公的脸和身体不入画，只有主人公的双手从画面下沿正中伸入：",
              "主人公的脸和身体不入画；这一段主人公的双手垂在身侧或插在兜里，也不入画。"]
+# "camera": "third" in film.json: an ordinary drama, the lead seen like everyone else
+THIRD = ("全程单镜头、无剪辑，竖屏画面，一台电影摄影机在人物视线高度跟着人物拍，35毫米镜头自然不变形的视角，景别在中景和近景之间，运镜平稳；"
+         "以下分镜是同一条连续镜头路径上的阶段，不是切镜，不换机位。")
 TAILS = ["画面中主人公全程不说话。",
          "声音只有角色台词、画外的主人公的声音、环境声和动作音效；不要生成 BGM，不要生成旁白字幕、台词字幕或对白字幕。",
          "声音只有角色台词、环境声和动作音效；不要生成 BGM，不要生成旁白字幕、台词字幕或对白字幕。"]
@@ -90,7 +93,7 @@ def main():
     exempt = set((opt("--exempt") or "").split(",")) - {""}
     pending = set((opt("--pending") or "").split(",")) - {""}
     text = open(os.path.join(project, "shots", episode + ".md"), encoding="utf-8").read()
-    fixed = [NO_MUSIC, POV] + POV_TAILS + hands(project) + TAILS
+    fixed = [NO_MUSIC, POV, THIRD] + POV_TAILS + hands(project) + TAILS
 
     rows = {}
     for line in text.splitlines():

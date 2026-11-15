@@ -133,8 +133,9 @@ def start(series, idea):
 
 
 # ------------------------------------------------------------------ checking a script
-def check_script(path, quiet=False):
-    """-> (errors, warnings, facts). The rules of series/DEVELOP.md section 6 and 7."""
+def check_script(path, quiet=False, camera="first"):
+    """-> (errors, warnings, facts). The rules of series/DEVELOP.md section 6 and 7. camera "third": an ordinary
+    drama (film.json "camera": "third"), so the lead may be seen and speak as much as anyone; no voiceover still holds."""
     text = open(path, encoding="utf-8").read()
     head, scenes = intake.parse(text)
     meta = intake.header(head)
@@ -178,8 +179,9 @@ def check_script(path, quiet=False):
             if VOICEOVER.search(raw):
                 errors.append("%s: os / vo / inner voice is not used in this series (no voiceover): %s" % (where, raw.strip()[:40]))
             if "闪回" in raw:
-                warnings.append("%s: a flashback; it must still be first person and be shot as its own scene with its own date line" % where)
-            for word in SEEN:
+                warnings.append("%s: a flashback; it must be shot as its own scene with its own date line%s"
+                                % (where, "" if camera == "third" else ", and still in first person"))
+            for word in (SEEN if camera == "first" else ()):
                 if word in raw:
                     errors.append("%s: the protagonist is never seen (first person): %s" % (where, raw.strip()[:40]))
             for word in CLICHES:
@@ -192,7 +194,7 @@ def check_script(path, quiet=False):
                 warnings.append("%s: a narration line usually ends with two dots: %s" % (where, line))
             if len(re.sub(r"\W", "", line)) > 8:
                 warnings.append("%s: a narration line over 8 characters: %s" % (where, line))
-    if spoken_total and lead_total > 0.35 * spoken_total:
+    if camera == "first" and spoken_total and lead_total > 0.35 * spoken_total:
         warnings.append("the protagonist says %d%% of all words; in first person he speaks little and others talk at him" % round(100.0 * lead_total / spoken_total))
     actions = len(re.findall(r"(?m)^\s*[△▲]", text))
     seconds = estimate(spoken_total, len(scenes), actions)

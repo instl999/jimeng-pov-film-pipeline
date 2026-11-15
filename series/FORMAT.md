@@ -279,6 +279,18 @@ Before U22 was the default: two test clips from the plain graph, 7 and 10 second
 - **It adds things**: posters with pseudo-text on a wall that should be bare, a desk calculator, an emblem on the passbook. There is no negative prompt, so describe the bare wall, the empty counter and the plain cover.
 - **Things that had to be fixed to get there**: the instance API takes GET parameters in the query string although its docs show a body; 4 MB reference images time out on upload, so they are sent as JPEGs of 1536 pixels at most; the save node needs its format chosen explicitly.
 
+### Third person (`"camera": "third"`)
+
+The series is first person, but the pipeline can also shoot an ordinary drama: a script from the [story agent](https://github.com/instl999/story-agent) (`export --to pov`), or any script in the series format whose lead is a named character. Set `"camera": "third"` in `film.json` (or `film.py intake SCRIPT P --camera third`; check the script with `film.py script-check SCRIPT --camera third`). What changes:
+
+- **The lead is a person like any other**: in `people`, with `body`, `voice`, `images` (and `en`, `voice_en` on H3), named in `lines`. There is no `我`, no `hands`, no `lead_voice`; `check` refuses a line by `我`.
+- **The camera** sentence of every prompt is a cinema camera at the characters' eye level, a natural 35mm view, framed between medium shots and close-ups, moving smoothly with the action, one continuous take. On H3 the English prompt says the same.
+- **Places** are drawn from the main camera position (`vantage` says where the camera stands and what it faces), not from the protagonist's eyes.
+- **The checklist** for each clip drops "the protagonist's body is never in frame"; everything else holds: every line word for word, no readable text, no music, no voiceover, the locked text layers, the 3,000 and 8,000 floors.
+- **Writing shots**: the shot recipe (section 8) holds, with the camera free to frame the lead. Keep every person's description identical in every shot, the lead's above all, since it now has to stay the same face from shot to shot.
+
+Not yet tried on a real film: the mode has been rehearsed offline (`tests/test_third.py`) on both engines; the first third-person episode will show what the prompts need.
+
 ### Two-layer prompts
 
 A shot in `film.json` is written in two layers and the runner joins them:

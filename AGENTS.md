@@ -17,7 +17,7 @@ Three more files, read when you reach the step that needs them:
 ## 1. What you are making
 
 - A vertical 1080×1920 video, as long as the script needs (the example is 2 min 34 s).
-- **First person throughout**: the camera is the protagonist's eyes. He is never seen, only his hands. People talk at the camera.
+- **First person throughout**: the camera is the protagonist's eyes. He is never seen, only his hands. People talk at the camera. (A film can instead be an ordinary third-person drama with `"camera": "third"`; see `series/FORMAT.md`, "Third person". Use it only when the owner asks.)
 - Every scripted line is spoken inside the clip by the video model and shown as a subtitle on a black strip. A few short text-only narration lines ("来买股票了..") understate what is happening. No voiceover, no music.
 - Two covers, 3:4 and 4:3.
 
@@ -69,6 +69,7 @@ python3 series/tools/film.py status examples/nvidia-2001
 python3 series/tools/tests/rehearse_h3.py                    # must end with "all steps hold"
 python3 series/tools/tests/test_develop.py                   # must end with "all steps hold"
 python3 series/tools/tests/test_comfy_workflow.py            # must end with "all steps hold"
+python3 series/tools/tests/test_third.py                     # must end with "all steps hold"
 python3 series/tools/tests/text_lock.py --render             # "text layers match the locked series spec"
 ```
 

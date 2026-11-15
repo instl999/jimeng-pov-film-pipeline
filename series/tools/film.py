@@ -4,8 +4,8 @@
     python3 film.py doctor                          is this machine ready: ffmpeg, fonts, jimeng-novel, login
     python3 film.py develop SERIES ["idea"] [--approve "words"]
                                                     from a vague idea to a script (series/DEVELOP.md)
-    python3 film.py script-check SCRIPT             is a script written in the series format ready for intake
-    python3 film.py intake  SCRIPT PROJECT [--like OTHER_PROJECT]
+    python3 film.py script-check SCRIPT [--camera third]   is a script written in the series format ready for intake
+    python3 film.py intake  SCRIPT PROJECT [--like OTHER_PROJECT] [--camera third]
                                                     script (.txt, .md or .docx) -> film.json skeleton + DECISIONS.md;
                                                     --like copies the look and cast of an earlier episode
     python3 film.py check   PROJECT                 validate film.json, write the shot file, run the gate
@@ -119,6 +119,11 @@ class Film:
     def engine(self):
         return self.d.get("engine", "jimeng")
 
+    @property
+    def camera(self):
+        """"first": the camera is the protagonist's eyes (the series' own form); "third": an ordinary drama."""
+        return self.d.get("camera", "first")
+
     def floor(self):
         """Characters of own writing a shot needs: 3,000, or 8,000 when it is made with MiniMax H3."""
         import h3
@@ -165,13 +170,15 @@ class Film:
                 for line in sh.get("lines", []):
                     if not (isinstance(line, list) and len(line) == 2 and isinstance(line[0], str)):
                         out.append("%s: every entry of \"lines\" is [speaker, words], for example [\"我\", \"先放着\"]" % sid)
+                    elif self.camera == "third" and line[0] == LEAD:
+                        out.append("%s: a third-person film has no \"我\"; the lead is a person in people, named in lines" % sid)
                 if "raw" not in sh:
                     for key in ("setup", "track", "ending"):
                         if not sh.get(key):
                             out.append("%s: no \"%s\"" % (sid, key))
                     if sc.get("style") not in d.get("styles", {}):
                         out.append("%s: the scene's style %r is not in styles" % (sid, sc.get("style")))
-                    if sh.get("hands_visible", True) and sc.get("hands") not in d.get("hands", {}):
+                    if self.camera == "first" and sh.get("hands_visible", True) and sc.get("hands") not in d.get("hands", {}):
                         out.append("%s: the scene's hands %r is not in hands (or set \"hands_visible\": false on the shot)" % (sid, sc.get("hands")))
                     for key in ("when", "tone", "date"):
                         if key not in sc:
@@ -185,7 +192,9 @@ class Film:
                 view = sh.get("view") or d["places"].get(sc.get("place"), {}).get("master")
                 if sc.get("place") in d["places"] and view not in d["places"][sc["place"]].get("views", {}):
                     out.append("%s: place view %r is not in places.%s.views" % (sid, view, sc.get("place")))
-        for key in ("premise", "notice", "styles", "hands"):
+        if d.get("camera", "first") not in ("first", "third"):
+            out.append("film.json: \"camera\" is \"first\" (the protagonist's eyes) or \"third\" (an ordinary drama)")
+        for key in ("premise", "notice", "styles") + (("hands",) if self.camera == "first" else ()):
             if not d.get(key):
                 out.append("film.json: \"%s\" is empty" % key)
         for alias, person in d["people"].items():
@@ -255,9 +264,12 @@ class Film:
         lines.append("%s本片段场景设定在：{{%s}}。%s；%s。整体电影感基调：%s"
                      % (gate.NO_MUSIC, sc["place"], sc["when"], place["sound"], sc["tone"]))
         lines += [""] + place["block"] + [""]            # the place, word for word in every shot there
-        hands = d["hands"][sc["hands"]]
-        pov = gate.POV + (gate.POV_TAILS[0] + hands if sh.get("hands_visible", True) else gate.POV_TAILS[1])
-        lines.append(pov + sh.get("hands_note", ""))
+        if self.camera == "third":
+            lines.append(gate.THIRD)
+        else:
+            hands = d["hands"][sc["hands"]]
+            pov = gate.POV + (gate.POV_TAILS[0] + hands if sh.get("hands_visible", True) else gate.POV_TAILS[1])
+            lines.append(pov + sh.get("hands_note", ""))
         lines += [""] + sh.get("setup", []) + [""]
         lines.append("情绪轨迹：%s生成一个由以下%d个分镜组成的视频。" % (sh["track"], len(sh["stages"])))
         for i, stage in enumerate(sh["stages"], 1):
@@ -265,7 +277,10 @@ class Film:
         if sh.get("ending"):
             lines.append(sh["ending"])
         speaks = self.lead_speaks(sh)
-        lines.append(gate.TAILS[1] if speaks else gate.TAILS[0] + gate.TAILS[2])
+        if self.camera == "third":
+            lines.append(gate.TAILS[2])
+        else:
+            lines.append(gate.TAILS[1] if speaks else gate.TAILS[0] + gate.TAILS[2])
         text = "\n".join(lines)
         return re.sub(r"\n{3,}", "\n\n", text).strip()
 
@@ -298,10 +313,11 @@ def cmd_build(film, quiet=False):
         with open(film.path("post", "lines", sh["id"] + ".txt"), "w", encoding="utf-8") as handle:
             handle.write("\n".join(film.subtitle_parts(sh)) + "\n")
     head = ("# %s 分镜（由 film.json 生成，不要直接改这个文件）\n\n"
-            "模型 %s，比例 9:16；每个镜头是一条连续的第一人称长镜头，时长是整秒。台词逐字照原稿；"
+            "模型 %s，比例 9:16；每个镜头是一条连续的%s长镜头，时长是整秒。台词逐字照原稿；"
             "只出字的旁白、顶部大字和日期行在合成时加，不写进提示词。\n\n"
             "| 段 | 画面 | 时长 | 主运镜 | 参考（别名=路径） | 只出字的旁白 |\n|---|---|---|---|---|---|\n%s\n\n"
-            "合计 %d 秒（%d 分 %02d 秒），%d 个镜头。\n\n" % (ep, model, "\n".join(rows), total, total // 60, total % 60, len(rows)))
+            "合计 %d 秒（%d 分 %02d 秒），%d 个镜头。\n\n" % (ep, model, "第一人称" if film.camera == "first" else "跟拍", "\n".join(rows), total,
+                                                          total // 60, total % 60, len(rows)))
     with open(film.path("shots", ep + ".md"), "w", encoding="utf-8") as handle:
         handle.write(head + "\n".join(sections))
     made = write_image_prompts(film)
@@ -348,7 +364,8 @@ def write_image_prompts(film):
         scene_style = next((sc.get("style") for sc in d["scenes"] if sc.get("place") == alias), None)
         style = d["styles"].get(place.get("style") or scene_style) or d["styles"].get("asset", "")
         master = place["master"]
-        text = "# %s\n\n## 设定\n\n- 第一张图是从主人公所在位置看出去的竖版（%s），其余朝向都从它派生。\n" % (alias, master)
+        text = "# %s\n\n## 设定\n\n- 第一张图是%s看出去的竖版（%s），其余朝向都从它派生。\n" % (
+            alias, "从主人公所在位置" if film.camera == "first" else "从主机位", master)
         for view, spec in place["views"].items():
             block = vert_fixed.replace("【视角与构图】\n", "【视角与构图】\n- " + spec["vantage"] + "\n") if spec.get("vantage") else vert_fixed
             lead_in = "" if view == master else ("{{%s}}是同一空间的母版画面：材质、光源方向、色调、年代与陈设保持一致，不新增母版里不存在的大件陈设。\n\n" % alias)
@@ -893,7 +910,8 @@ def qc_shot(film, sc, sh):
     n = max(1, int(dur))
     subprocess.run([FFMPEG, "-v", "error", "-y", "-i", clip, "-vf", "fps=1,scale=216:-1,tile=%dx1" % n, "-frames:v", "1",
                     "-fps_mode", "passthrough", os.path.join(qc_dir, sid + ".png")])
-    always = ["主人公的脸、身体、腿、脚没有入画，只有手", "画面里没有可读的文字、数字和真实品牌的标志", "说话的是该说话的人，嘴在动",
+    always = (["主人公的脸、身体、腿、脚没有入画，只有手"] if film.camera == "first" else []) + [
+              "画面里没有可读的文字、数字和真实品牌的标志", "说话的是该说话的人，嘴在动",
               "人物的长相、衣服和参考图一致", "场所和同一场的其他镜头一致", "最后一帧停在这一段写的结尾状态"]
     with open(os.path.join(qc_dir, sid + ".md"), "w", encoding="utf-8") as handle:
         handle.write("# %s 看图清单\n\n图：%s.png（一秒一格）\n\n必须有：\n%s\n\n不能有：\n%s\n\n每条都要看：\n%s\n"
@@ -1207,7 +1225,7 @@ def estimate_seconds(line_chars, scenes):
     return int(round((line_chars / 4.0 + 5.5 * scenes) / 5.0) * 5)
 
 
-def cmd_intake(script_path, project, like=None):
+def cmd_intake(script_path, project, like=None, camera=None):
     import intake
     import develop
     why = develop.approval_of(script_path)
@@ -1246,9 +1264,12 @@ def cmd_intake(script_path, project, like=None):
             "source": os.path.relpath(kept, project), "finish": DEFAULT_FINISH, "budget": None, "reroll_rate": 0.3, "floor": 3000,
             "titles": {"premise_seconds": 7, "date_seconds": 4}, "end_card": None, "styles": {"cold": "", "warm": "", "asset": ""},
             "hands": {}, "lead_voice": "", "props": {}, "people": {}, "places": {}, "line_exceptions": [], "scenes": scenes}
+    if camera:
+        film["camera"] = camera
     if like:                                            # a later episode: same look, same people, same places
         prev = json.load(open(os.path.join(like, "film.json"), encoding="utf-8"))
-        for key in ("styles", "hands", "lead_voice", "notice", "people", "places", "titles", "end_card", "engine", "finish", "h3", "styles_en", "hands_en"):
+        for key in ("camera", "styles", "hands", "lead_voice", "notice", "people", "places", "titles", "end_card", "engine", "finish", "h3",
+                    "styles_en", "hands_en"):
             if key in prev:
                 film[key] = prev[key]
         film["title"] = prev.get("title", "")
@@ -1311,11 +1332,11 @@ def main():
     if cmd == "doctor":
         sys.exit(cmd_doctor())
     if cmd == "intake":
-        like = opt("--like")
-        pos = [a for a in pos if a != like]
-        if len(pos) != 2:
+        like, camera = opt("--like"), opt("--camera")
+        pos = [a for a in pos if a not in (like, camera)]
+        if len(pos) != 2 or camera not in (None, "first", "third"):
             sys.exit(__doc__)
-        sys.exit(cmd_intake(pos[0], pos[1], like))
+        sys.exit(cmd_intake(pos[0], pos[1], like, camera))
     if cmd == "develop":
         import develop
         words = opt("--approve")
@@ -1327,9 +1348,11 @@ def main():
         sys.exit(develop.start(args[0], args[1]) if len(args) > 1 else develop.status(args[0]))
     if cmd == "script-check":
         import develop
+        camera = opt("--camera") or "first"
+        pos = [a for a in pos if a != camera]
         if len(pos) != 1:
             sys.exit(__doc__)
-        sys.exit(1 if develop.check_script(pos[0])[0] else 0)
+        sys.exit(1 if develop.check_script(pos[0], camera=camera)[0] else 0)
     if not pos:
         sys.exit(__doc__)
     film = Film(pos[0])

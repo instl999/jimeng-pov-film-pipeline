@@ -11,6 +11,7 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 | `premise` | The two title lines shown for the first seconds, e.g. `["假如你在2001年", "全仓买入英伟达"]` |
 | `notice` | The AI notice, small in the top right corner for the whole video |
 | `source` | The script as plain text, e.g. `"source/nvidia-2001.txt"`. Lines are checked against it |
+| `camera` | `"first"` (default: the camera is the protagonist's eyes, the series' own form) or `"third"` (an ordinary drama: a cinema camera follows the action and the lead is seen like everyone else). See FORMAT.md, "Third person" |
 | `engine` | `"jimeng"` (default: Seedance 2.5 through `jimeng-novel`) or `"h3"` (MiniMax H3 in ComfyUI on a rented AutoDL Art GPU). See "The H3 engine" below |
 | `finish` | `"720p"` (default), `"sample"` or `"1080p"`; Jimeng engine only. See FORMAT.md section 8 |
 | `budget` | Credit cap for this film. `null` means nothing may be generated |

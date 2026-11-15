@@ -70,6 +70,10 @@ MOTION = ("Movement: everything moves at real-life speed, smoothly and continuou
           "like a person's head.")
 TEXTURE = ("Image: sharp and finely detailed, natural skin with visible pores, fine lines and small blemishes, single strands of hair, "
            "the weave of fabric, real wear on every surface, and a fine, even film grain.")
+# "camera": "third": an ordinary drama, the lead in frame like everyone else
+THIRD = ("The whole clip is one continuous shot with no cuts, filmed by a cinema camera at the characters' eye level with the natural, "
+         "undistorted view of a 35mm lens, straight lines staying straight and faces keeping their true proportions; it is framed "
+         "between medium shots and close-ups and moves smoothly with the action, never handheld-shaky.")
 DIALOGUE_MIX = ("The dialogue is recorded close and clear, well above the room sound, with the room's natural reverberation; every "
                 "word is intelligible.")
 SKIP_REFS = ("预演", "主人公的声音")
@@ -143,7 +147,7 @@ def problems(film):
             sid, spec = sh.get("id", "?"), sh.get("h3", {})
             if isinstance(sh.get("seconds"), int) and sh["seconds"] > MAX_SECONDS:
                 out.append("%s: %d s is longer than an H3 clip can be (%d s)" % (sid, sh["seconds"], MAX_SECONDS))
-            if sh.get("hands_visible", True) and sc.get("hands") and not d.get("hands_en", {}).get(sc["hands"]):
+            if film.camera == "first" and sh.get("hands_visible", True) and sc.get("hands") and not d.get("hands_en", {}).get(sc["hands"]):
                 out.append("%s: hands_en has no English description of my hands for %r" % (sid, sc["hands"]))
             for alias in sh.get("people", {}):
                 if not d["people"].get(alias, {}).get("en"):
@@ -211,11 +215,14 @@ def prompt(film, sc, sh, n):
                     % picture[CHAIN])
         task = "[keyframe completion + reference generation]"
     body = re.sub(r"\{([^{}]+)\}", lambda m: "<Subject %d>" % subject[m.group(1)], sh["h3"]["body"].strip())
-    hands = ("only his two hands enter the frame from the bottom edge: %s" % d["hands_en"][sc["hands"]].rstrip()
-             if sh.get("hands_visible", True) else "his hands stay out of frame as well.")
-    pov = ("The whole clip is one continuous first-person shot with no cuts: the camera is the protagonist's own eyes at eye height, the "
+    if film.camera == "third":
+        pov = THIRD
+    else:
+        hands = ("only his two hands enter the frame from the bottom edge: %s" % d["hands_en"][sc["hands"]].rstrip()
+                 if sh.get("hands_visible", True) else "his hands stay out of frame as well.")
+        pov = ("The whole clip is one continuous first-person shot with no cuts: the camera is the protagonist's own eyes at eye height, the "
            "natural, undistorted view of a 35mm lens, straight lines staying straight and faces keeping their true proportions, with "
-           "slight natural head movement. His face and body never appear; %s" % hands)
+               "slight natural head movement. His face and body never appear; %s" % hands)
     text = "\n".join([
         "subject_definitions:", "\n".join(defs), "",
         "summary:", "%s %s" % (task, sh["h3"]["summary"].strip()), "",
