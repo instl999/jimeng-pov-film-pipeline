@@ -8,12 +8,14 @@ One file per film, at `PROJECT/film.json`. `series/tools/film.py` reads it and g
 |---|---|
 | `title` | The film's name |
 | `episode` | `"E01"`. Names the generated files (`shots/E01.md`, `out/E01.mp4`) |
+| `series` | `".."` for an episode of a series: the film reads `../series.json`, which supplies `camera`, `engine`, `finish`, `h3`, `notice`, `titles`, `end_card`, `floor`, `place_floor`, `reroll_rate` and (when set there) `lead_voice`; puts the series `look` in front of every style; and caps the film at what is left of the run's `budget`. Leave those keys out of the episode: one set differently fails `check`. See `series/tools/series.py` and AGENTS.md, "A run of scripts" |
 | `premise` | The two title lines shown for the first seconds, e.g. `["假如你在2001年", "全仓买入英伟达"]` |
 | `notice` | The AI notice, small in the top right corner for the whole video |
 | `source` | The script as plain text, e.g. `"source/nvidia-2001.txt"`. Lines are checked against it |
 | `camera` | `"first"` (default: the camera is the protagonist's eyes, the series' own form) or `"third"` (an ordinary drama: a cinema camera follows the action and the lead is seen like everyone else). See FORMAT.md, "Third person" |
 | `engine` | `"jimeng"` (default: Seedance 2.5 through `jimeng-novel`) or `"h3"` (MiniMax H3 in ComfyUI on a rented AutoDL Art GPU). See "The H3 engine" below |
-| `finish` | `"720p"` (default), `"sample"` or `"1080p"`; Jimeng engine only. See FORMAT.md section 8 |
+| `finish` | `"720p"` (default), `"sample"`, `"sample_up"` (480p takes, passed shots upscaled to 1080p by `film.py upscale`) or `"1080p"`; Jimeng engine only. See FORMAT.md section 8 |
+| `facts` | `{"<figure as shown>": "<where it comes from>"}` for every money figure, price, multiple or percentage on screen (title, date and narration lines). `check` fails one without a source |
 | `budget` | Credit cap for this film. `null` means nothing may be generated |
 | `reroll_rate` | Share of shots expected to be redone, for pricing. `0.3` |
 | `floor` | `3000`: the length floor, a hard rule of the series. (a) a shot's whole prompt, meaning the place block plus the shot's own layer, is at least 3,000 Chinese characters; (b) the shot's own layer (`setup`, `track`, `stages`, `ending`) is at least 2,000 of them, so a long place block cannot carry a thin shot; (c) a place whose image is still to be made has at least 3,000 in `block` plus `detail`. On the H3 engine (a) is 8,000 and (b) is 5,334. `film.py check` counts all three. |

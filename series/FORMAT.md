@@ -134,7 +134,7 @@ Nothing stays on screen for the whole film except the notice.
 
 - **No real public figure's name or likeness** in the film file, prompts, subtitles or covers.
 - **Every film carries the AI-generated notice.** The platform's own AI mark is never cropped or covered.
-- **A number shown on screen has a source** written in the project's README, checked before the film is composed. A number a character says as a boast is dialogue, not a fact.
+- **A number shown on screen has a source**, in `"facts"` in film.json (figure as shown → where it comes from). `film.py check` fails a money figure, price, multiple or percentage in a title line, date line or narration line without one. A story's own running tally is sourced by how it is worked out; a real historical price by a dated source. A number a character says as a boast is dialogue, not a fact.
 - **Brands and logos are generic in the picture.** A brand a character names in a scripted line is said as written.
 - **Follow the platform's content review.** When a generation is refused, change how the beat is staged; do not hunt for wording that slips past the filter.
 - **Reference videos you study are style references only**: never feed someone else's footage or a real person's face to the generator.
@@ -183,6 +183,7 @@ What the sign-off covers: the shots in their order, each with its length, its li
 | `720p` (default) | `Seedance_2.5` at 720p, every shot generated straight at 720p; no 480p pass first, because a 720p clip is a fresh take whatever was drafted before | 20 |
 | `sample` | `Seedance_2.5_draft` at 480p, enlarged in the edit. The first film was finished this way | 9 (14 with a reference video) |
 | `1080p` | 480p drafts, then `jimeng-novel node finalize` on each approved draft. The export inherits the draft exactly and costs as much as generating 1080p directly. The runner prices this route but does not run the export; it is done by hand, within 7 days of the draft | 9 + 64 |
+| `sample_up` | `Seedance_2.5_draft` at 480p; once a shot has passed its look-through, `film.py upscale` enlarges that take to 1080p with Jimeng's fast upscaler (`jimeng-novel upscale --to 1080p --mode fast`), and `compose --final` uses the 1080p takes. Failed takes are never upscaled. Used for a whole 16:9 film outside this series (2026-11-23), not yet on a film of this series: the draft model is lighter than the full one, so compare one shot against 720p on a pilot before choosing it for a run | 9, plus about 1 once per passed shot |
 
 Images are 4 credits each (Seedream 5.5). `budget` adds 30% for re-rolls (`reroll_rate`). `"budget"` in `film.json` is the cap in credits; with no cap set, nothing is generated. Always price the whole job first: on the first film the 1080p export was quoted only after the drafts were made, and turned out to cost five times the drafts.
 
@@ -325,6 +326,8 @@ The first image of a place (`master`) is upright, 9:16, seen from the spot and h
 - Fonts: Songti SC Black for everything except the notice, which is Hiragino Sans GB (the subtitle renderer cannot open macOS's PingFang). Both come with macOS. Elsewhere set `FILM_SERIF`, `FILM_SANS` and `FILM_SANS_BOLD` to installed Chinese fonts.
 - In the full layout a line holds 10 characters at full size. A longer one is drawn smaller with a warning; split it into parts instead.
 - Clips smaller than the canvas are enlarged with a Lanczos filter to cover 1080×1920.
+- **When a subtitle leaves.** The recogniser's end of a line often comes before a quiet last syllable, which took subtitles off while people were still talking (seen on 22 of 32 shots of a film outside this series). `make_cues.py` therefore follows each line on the clip's own sound until it stays quiet for 0.2 s (at most 0.9 s past the recogniser's end, never into the next line), holds 0.25 s, and closes any gap under 0.7 s between two lines so the strip does not blink off and on.
+- **Reference pictures** are uploaded once per film as JPEGs of at most 1280 pixels and reused by asset id (`.film/state.json`, `assets`); sending the full PNGs with every request timed out on a long run. `FILM_REF_UPLOAD=0` turns this off.
 
 ### When the service misbehaves
 
@@ -463,5 +466,7 @@ Tell the owner what is still wrong in the cut you hand over. A short list of kno
 | The 720p Jimeng route on real shots | Priced and wired into the runner and the default, but the first film was finished from 480p samples, so no shot has yet been generated at 720p through `film.py draft --run`. The first shot of the next film is the test |
 | A recording as my voice reference | Supported on the 720p route by setting `lead_voice_sample`; off by default and untried. The written description alone held on the first film |
 | The 1080p route | Priced by `budget`; the export step (`jimeng-novel node finalize` on each approved draft) is not automated |
+| The `sample_up` route | Wired (`film.py upscale`); the upscaler was used on a whole film outside this series, not yet on one of this series |
+| A series run | `film.py series` rehearsed offline (`tests/test_series.py`); no run has gone through it for real. Make the first episode alone first |
 | Fonts outside macOS | The edit uses macOS's Songti SC and Hiragino Sans GB. Elsewhere set `FILM_SERIF`, `FILM_SANS`, `FILM_SANS_BOLD`; untested |
 | Script intake | Tried on one script. It marks every line whose speaker it had to guess; read the script yourself |

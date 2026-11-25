@@ -70,6 +70,8 @@ python3 series/tools/tests/rehearse_h3.py                    # must end with "al
 python3 series/tools/tests/test_develop.py                   # must end with "all steps hold"
 python3 series/tools/tests/test_comfy_workflow.py            # must end with "all steps hold"
 python3 series/tools/tests/test_third.py                     # must end with "all steps hold"
+python3 series/tools/tests/test_series.py                    # must end with "all steps hold"
+python3 series/tools/tests/test_hardening.py                 # must end with "all steps hold"
 python3 series/tools/tests/text_lock.py --render             # "text layers match the locked series spec"
 ```
 
@@ -96,7 +98,44 @@ python3 series/tools/film.py develop films/<series>                        # sta
 python3 series/tools/film.py develop films/<series> --approve "<the owner's words>"
 ```
 
-Then each episode is a film: `P=films/<series>/E01` and Step 1 takes `films/<series>/story/E01.txt`. From then on that script is the owner's script and rule 1 applies to it. For episode 2 onwards add `--like films/<series>/E01` to Step 1 so the look and the people carry over.
+Then each episode is a film: `P=films/<series>/E01` and Step 1 takes `films/<series>/story/E01.txt`. From then on that script is the owner's script and rule 1 applies to it. For several episodes, use the series commands below instead of `--like`.
+
+### A run of scripts: one series, one look
+
+When the owner hands you several scripts (or a developed series has several), make them as one series, so every film looks and feels the same. The scripts go in `films/<series>/story/` as `E01.txt`, `E02.txt` … in the order they are released.
+
+```bash
+S=films/<series>
+python3 series/tools/film.py series $S intake          # every script -> $S/E01, $S/E02 …, and $S/series.json
+```
+
+`$S/series.json` is where the look is written, once, before any episode's film.json:
+
+- `look`: one sentence that every shot and every reference picture of the series shares: the medium, film stock, grain, lens, grade (for example 真人实拍的年代写实照片质感，35mm 彩色负片细颗粒，镜头略广，暗部有颗粒不发黑). It is put in front of every style an episode writes, so an episode's `styles` say only what is its own: the era, the palette, the light.
+- `camera`, `engine`, `finish`, `notice`, `titles`, `end_card`, `floor`: the format, the same for every episode. Leave the defaults unless the owner says otherwise.
+- `lead_voice`: set it if "I" should sound the same in every film; leave it `""` when each film has its own protagonist.
+- `continuing`: `false` for an anthology (each film its own "me", people and places: the usual case). `true` when the episodes are one story: each episode is then taken in from the one before, so its people, places, hands and reference pictures carry over. Write E01 first, then run `series $S intake` again for the next.
+- `budget`: the owner's credit cap for the **whole run**. Every episode's stops are held to what is left of it.
+- `finish`: `"720p"` (the default, about 20 credits a second) or `"sample_up"` (480p takes, and only the shots that pass are upscaled to 1080p by Jimeng: about 10 a second). Price both with `series $S budget` and let the owner choose; settle it on the pilot (below) by making its first shot both ways.
+
+Write the series bible before the scripts are signed: `$S/story/SERIES.md`, from `series/topic-template/SERIES.md`. It is the shape every episode keeps (for the time-travel series: the hook in the first three seconds, the mockery, the bet, the jumps in time, the payoff you can see, the mocker coming back), the protagonist, the eras, and what never appears. Hold every script to it at Step 2 and say at Stop 1 where one departs from it.
+
+**Make the first episode alone first (the pilot).** Take all the scripts in, but write, sign off, generate and cut E01 by itself (`--episodes E01` on `approve` and `run`) before the rest. It is the first real test of the finish, the series look and the subtitle timing, and its real cost per second sets the run's cap. Only then sign off and run the others.
+
+Each episode is then written exactly as Steps 2 and 3 say, in `$S/E01/film.json` and so on, except that the keys above stay out of it: an episode that sets one of them differently fails `check` ("locked by the series"). Then, for the whole run at once:
+
+```bash
+python3 series/tools/film.py series $S check           # every episode's gate, and that none drifts from the series
+python3 series/tools/film.py series $S budget          # every episode priced; the total against the run's cap
+python3 series/tools/film.py series $S summary         # $S/RUN.md: the whole run on one page
+# STOP 1 for the run: send RUN.md and every episode's DECISIONS.md (the pilot's full shots/E01.md and cast/ prompts too). When the owner says yes:
+python3 series/tools/film.py series $S approve "<the owner's words>"     # refused while any episode fails; --episodes E01,E02 for a subset
+python3 series/tools/film.py series $S run             # dry run: what each episode would make
+python3 series/tools/film.py series $S run --run       # images, then shots, episode by episode, until the run's cap
+python3 series/tools/film.py series $S                 # where every episode stands
+```
+
+Look at every clip and record verdicts per episode as in Step 8 (`film.py review $S/E02 S05 pass`); redo a shot with `film.py draft $S/E02 --only S05 --run`. On the `sample_up` finish, `series $S upscale --run` then enlarges every passed shot to 1080p (only passed takes are paid for). Then `series $S compose` makes every episode's cut for STOP 2; each episode is accepted on its own (`"accepted": true` in its film.json), and `series $S compose --final` and `series $S cover --run` finish the accepted ones. Everything else in this manual holds per episode.
 
 ### Step 1. Take in the script
 
@@ -117,7 +156,7 @@ Read the whole script yourself. The tool's list of lines is a starting point, no
 - **Real names**: every real public figure named in the script, and the description that replaces the name. Do not write the name itself in any file you create.
 - **Brands**: generic in the picture; a brand inside a scripted line is said as written.
 - **Risky beats**: anything the platform may refuse (sex, violence, gambling, market manipulation played straight). For each: shoot as written, or how you would restage it.
-- **Numbers and years**: which appear on screen as the date line of a scene. Do not put other figures on screen unless the owner asks.
+- **Numbers and years**: which appear on screen as the date line of a scene. Do not put other figures on screen unless the owner asks. Every money figure, price, multiple or percentage on screen (title lines, date lines, narration) needs its source in `"facts"` in film.json (`{"3000万": "故事里的数：1977 年 100 元 × …"}` for a story number, a dated price source for a real one); `check` fails a figure without one. A figure a character says is dialogue and needs none.
 - **Narration**: the status lines you propose. Rules in `FORMAT.md` section 5. Propose one per scene opening or closing at most, then cut every one the picture already says. Expect to keep about half.
 - **Finish and cap**: the price table is already filled in from the script's length. It is a first estimate; once the shots are written, `film.py budget` is the figure to quote. Recommend 720p. Ask for a cap.
 
@@ -240,7 +279,7 @@ Wait. Do not call it finished yourself.
 
 ### Step 10. Finish and covers
 
-When the owner says the cut is good: set `"accepted": true` in `film.json`, then
+When the owner says the cut is good: set `"accepted": true` in `film.json`, then (on the `sample_up` finish, `film.py upscale $P --run` first: the final cut uses the 1080p takes)
 
 ```bash
 python3 series/tools/film.py compose $P --final  # writes $P/out/E01.mp4
@@ -283,6 +322,7 @@ Tell the owner: where the files are, what was spent (`film.py status $P`), what 
 | Reference image | 4 credits |
 | Clip at 720p (default) | 20 credits a second |
 | Clip at 480p (`"finish": "sample"`) | 9 credits a second |
+| 480p, passed shots upscaled to 1080p (`"finish": "sample_up"`) | 9 a second per take, plus about 1 a second once per passed shot |
 | Cover art at 2K | 6 credits a take, usually 24 for the pair |
 | Speech recognition for checking lines | free |
 
@@ -321,12 +361,15 @@ series/FORMAT.md               craft spec
 series/FILM.md                 the film file, key by key
 series/DEVELOP.md              from an idea to a script
 series/text-styles.json        the locked text on screen (and text-styles.jpg)
-series/tools/film.py           the runner: doctor, develop, script-check, intake, check, budget, approve, images, preview, draft, qc, review, compose, cover, status
+series/tools/film.py           the runner: doctor, develop, script-check, intake, check, budget, approve, images, preview, draft, qc, review, compose, cover, status, series
+series/tools/series.py         a run of scripts as one series: series.json, the locked look, one cap, batch commands
 series/tools/                  the tools film.py calls; tests/rehearse_h3.py
 series/topic-template/         a blank project card and a blank film.json
 series/sfx/                    your sound effects (not included)
 examples/nvidia-2001/          the worked example
-films/<series>/story/          brief, setting, outline, E01.txt … when you developed an idea
+films/<series>/story/          brief, setting, outline, E01.txt … when you developed an idea, or the owner's scripts for a run
+films/<series>/series.json     the series' look and the run's cap (series/tools/series.py)
+films/<series>/E01/ …          one film per script, each reading series.json
 films/<name>/                  your films (not committed)
   film.json                    the film; the only file you edit
   DECISIONS.md                 the decision sheet for the owner

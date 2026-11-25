@@ -19,9 +19,13 @@
                                                     (--keep: on the H3 engine, hold the GPU for the next 15 minutes)
     python3 film.py qc      PROJECT [--only S01]    lines, length, the lead's pitch, a frame sheet and checklist
     python3 film.py review  PROJECT S05 pass|fail ["why"]   record the look-through of a shot's frame sheet
+    python3 film.py upscale PROJECT [--run]         finish "sample_up": every passed shot enlarged to 1080p by Jimeng
     python3 film.py compose PROJECT [--final] [--out NAME]  edit plan -> cues -> video
     python3 film.py cover   PROJECT [--run]         3:4 and 4:3 covers: generated key art with the title set on it
     python3 film.py status  PROJECT                 every shot: state, tries, credits; total against the cap
+    python3 film.py series  SERIES [intake|check|budget|approve|run|compose|cover]
+                                                    a run of scripts made into films that share one locked look
+                                                    (series.py; SERIES/series.json is the look and the run's cap)
 
 PROJECT/film.json is the single source for the film: titles, people, places, props, and every scene
 and shot with its length, stages, lines and narration. Everything else is generated from it:
@@ -59,8 +63,9 @@ sys.path.insert(0, TOOLS)
 import check_shots as gate  # noqa: E402  (the fixed blocks live there, once)
 import env                  # noqa: E402  (where ffmpeg, the skill and the sound effects are)
 
-PRICE = {"image": 4, "draft": 9, "draft_with_video_ref": 14, "720p": 20, "1080p": 64}   # credits; video per second
-MODELS = {"sample": "Seedance_2.5_draft", "720p": "Seedance_2.5", "1080p": "Seedance_2.5_draft"}
+PRICE = {"image": 4, "draft": 9, "draft_with_video_ref": 14, "720p": 20, "1080p": 64, "upscale": 1}   # credits; video per second
+MODELS = {"sample": "Seedance_2.5_draft", "720p": "Seedance_2.5", "1080p": "Seedance_2.5_draft", "sample_up": "Seedance_2.5_draft"}
+UPSCALED = "up"                 # out/<episode>/up/<shot>.mp4: a passed 480p take enlarged to 1080p by Jimeng (finish "sample_up")
 MAX_TRIES = 3
 ENGINES = ("jimeng", "h3")      # Seedance 2.5 through jimeng-novel; MiniMax H3 in ComfyUI on a rented GPU (h3.py)
 DEFAULT_FINISH = "720p"        # generated at 720p, enlarged to the 1080x1920 canvas in the edit
@@ -90,6 +95,10 @@ class Film:
             die("no film.json in %s (start with: film.py intake SCRIPT.txt PROJECT)" % self.project)
         with open(path, encoding="utf-8") as handle:
             self.d = json.load(handle)
+        self.series_drift = []
+        if self.d.get("series"):                        # an episode of a series: the locked look comes from series.json
+            import series
+            series.apply(self)
         self.episode = self.d.get("episode", "E01")
         self.state_path = os.path.join(self.project, ".film", "state.json")
         self.state = {"shots": {}, "images": {}, "spent": 0}
@@ -138,11 +147,11 @@ class Film:
 
     # ---- validation ---------------------------------------------------------------
     def problems(self):
-        d, out, seen = self.d, [], set()
+        d, out, seen = self.d, ["series: " + line for line in self.series_drift], set()
         for key in ("title", "premise", "scenes", "people", "places"):
             if key not in d:
                 out.append("film.json has no \"%s\"" % key)
-        if out:
+        if any(line.startswith("film.json has no") for line in out):
             return out
         if d.get("finish", DEFAULT_FINISH) not in MODELS:
             out.append("finish must be one of %s" % ", ".join(MODELS))
@@ -423,6 +432,11 @@ def cmd_check(film):
         print("note: %d older shot(s) of this finished film are exempt from the length floor (written before it existed)" % len(legacy))
     if to_make:
         print("note: %d reference image(s) are still to be made (after sign-off: film.py images --run)" % len(to_make))
+    if not film.d.get("accepted"):
+        for where, text, figure in unsourced_figures(film):
+            print("%s: the figure 「%s」 is shown on screen (%s) but has no source in \"facts\"; add \"facts\": {\"%s\": \"<where it comes from>\"}"
+                  % (where, figure, text, figure))
+            rc = 1
     src = film.d.get("source")
     if src and os.path.isfile(film.path(src)):
         script = "".join(ch for ch in open(film.path(src), encoding="utf-8").read() if ch.isalnum())
@@ -434,6 +448,26 @@ def cmd_check(film):
                     rc = 1
         rc = script_lines_kept(film, open(film.path(src), encoding="utf-8").read()) or rc
     return rc
+
+
+FIGURE = re.compile(r"[$¥￥]?\d[\d,，.]*\s*(?:万|亿|千|百)?\s*(?:元|块|美元|美金|刀|倍|%|％|股|克|斤|平|套)"
+                    r"|[$¥￥]?\d[\d,，.]*\s*(?:万|亿)|[零一二两三四五六七八九十百千]+(?:万|亿)(?:元|块)?")
+
+
+def unsourced_figures(film):
+    """Money, prices, multiples and percentages on screen (title lines, date lines, narration) that "facts" does not
+    source. Years and day counts are not figures. A number a character says is dialogue, not a figure on screen."""
+    facts = film.d.get("facts") or {}
+    shown = [("premise", line) for line in film.d.get("premise") or []]
+    shown += [(sc.get("id", "?"), sc.get("date", "")) for sc in film.d.get("scenes", [])]
+    shown += [(sh["id"], sh.get("narration", {}).get(k, {}).get("text", "")) for _, sh, _ in film.shots() for k in ("open", "close")]
+    out = []
+    for where, text in shown:
+        for m in FIGURE.finditer(text or ""):
+            figure = m.group(0).strip()
+            if not any(figure in key or key in figure for key in facts):
+                out.append((where, text, figure))
+    return out
 
 
 def script_lines_kept(film, script_text):
@@ -488,6 +522,7 @@ def cmd_budget(film):
         # a 720p clip is a fresh take whatever was drafted before, so drafting first only adds cost
         ("720p", "generate straight at 720p, enlarge to 1080 in the edit (the default)", PRICE["720p"] * seconds * (1 + r)),
         ("1080p", "draft all, then export the approved drafts", PRICE["draft"] * seconds * (1 + r) + PRICE["1080p"] * seconds),
+        ("sample_up", "480p samples, every passed shot upscaled to 1080p by Jimeng (fast)", PRICE["draft"] * seconds * (1 + r) + PRICE["upscale"] * seconds),
     ]
     cap, spent = d.get("budget"), film.state.get("spent", 0)
     print("%d shots, %d s; %d image(s) still to make (%d credits); re-roll rate assumed %d%%"
@@ -671,12 +706,51 @@ def node_status(film, key):
         return "unknown"
 
 
+def file_sha(path):
+    digest = hashlib.sha1()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()[:16]
+
+
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def ref_source(film, path):
+    """-> what a --ref points at. A reference picture is uploaded once, as a JPEG of at most 1280 pixels, and
+    reused by its asset id from then on (kept in state, keyed by the picture's content): sending the full
+    PNGs with every shot timed out on a long run. Anything else, or a failed upload, goes as file:."""
+    full = film.path(path)
+    if not path.lower().endswith(IMAGE_EXT) or not os.path.isfile(full) or os.environ.get("FILM_REF_UPLOAD") == "0":
+        return "file:" + path
+    mark = file_sha(full)
+    assets = film.state.setdefault("assets", {})
+    if mark in assets:
+        return "resource:" + assets[mark]
+    small = film.path(".film", "refs", mark + ".jpg")
+    os.makedirs(os.path.dirname(small), exist_ok=True)
+    if not os.path.isfile(small):
+        subprocess.run([FFMPEG, "-v", "error", "-y", "-i", full, "-vf",
+                        "scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease", "-q:v", "3", small])
+    if not os.path.isfile(small):
+        return "file:" + path
+    rc, out = cli(film, ["resource", "upload", "--file", os.path.relpath(small, film.project), "--wait", "60", "--json"], timeout=150, tries=2)
+    m = re.search(r'"?asset_?[Ii]d"?\s*[:=]\s*"?([A-Za-z0-9_-]{6,})', out)
+    if rc or not m:
+        print("  note: could not upload %s once (%s); it goes with the request instead" % (path, (out.strip().splitlines() or ["no answer"])[-1][:100]))
+        return "file:" + path
+    assets[mark] = m.group(1)
+    film.save_state()
+    return "resource:" + m.group(1)
+
+
 def ensure_node(film, key, kind, model, prompt_ref, params, refs):
     cmd = ["node", "create", "--key", key, "--type", kind, "--model", model, "--prompt-file", prompt_ref]
     for k, v in params:
         cmd += ["--param", "%s=%s" % (k, v)]
     for alias, path in refs:
-        cmd += ["--ref", "%s=file:%s" % (alias, path)]
+        cmd += ["--ref", "%s=%s" % (alias, ref_source(film, path))]
     for attempt in range(3):
         rc, out = cli(film, cmd, timeout=600)
         if rc == 0 or "RESULT_READ_FAILED" in out:       # saved; only the read-back failed
@@ -790,6 +864,75 @@ def cmd_draft(film, only, run, keep=False):
             last_frame(film, sid)
             qc_shot(film, sc, sh)
             film.save_state()
+    return 0
+
+
+def upscaled_clip(film, sh):
+    return film.path("out", film.episode, UPSCALED, sh.get("take", sh["id"]) + ".mp4")
+
+
+def seconds_of(clip):
+    out = subprocess.run([FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", clip], capture_output=True, text=True).stdout
+    try:
+        return float(out.strip())
+    except ValueError:
+        return 0.0
+
+
+def cmd_upscale(film, run):
+    """Finish "sample_up": every shot that passed its look-through is enlarged from 480p to 1080p by Jimeng's
+    fast upscaler (about 1 credit a second), once per take. Only passed takes are paid for, so a re-take never
+    costs an upscale. compose --final then uses out/<episode>/up/."""
+    d = film.d
+    if d.get("finish", DEFAULT_FINISH) != "sample_up":
+        die("upscale is for a film with \"finish\": \"sample_up\" (480p samples, passed shots enlarged to 1080p)")
+    cap, todo, waiting = d.get("budget"), [], []
+    for _, sh, _ in film.shots():
+        st, clip = film.shot_state(sh["id"]), clip_of(film, sh)
+        if not os.path.isfile(clip) or not str(st.get("checks", {}).get("look", "")).startswith("pass"):
+            waiting.append(sh["id"])
+            continue
+        mark = file_sha(clip)
+        if st.get("upscaled", {}).get("src") == mark and os.path.isfile(upscaled_clip(film, sh)):
+            continue
+        todo.append((sh, clip, mark))
+    if waiting:
+        print("not passed yet, so not upscaled: %s" % ", ".join(waiting))
+    if not todo:
+        print("nothing to upscale" if not waiting else "every passed shot is upscaled")
+        return 0 if not waiting else 1
+    if run:
+        refuse_unsigned(film, run, shots=[], images=[])
+    for sh, clip, mark in todo:
+        st, dst = film.shot_state(sh["id"]), upscaled_clip(film, sh)
+        cost = int(math.ceil(seconds_of(clip) * PRICE["upscale"]))
+        print("%-4s upscale to 1080p  about %d credits%s" % (sh["id"], cost, "" if run else "  (dry run)"))
+        if not run:
+            continue
+        if cap is None or film.state["spent"] + cost > cap:
+            print("  stopping: the cap of %s would be passed (spent %d)" % (cap, film.state["spent"]))
+            return 1
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.isfile(dst):                         # the upscale of an earlier take
+            os.makedirs(os.path.join(os.path.dirname(dst), "old"), exist_ok=True)
+            os.replace(dst, os.path.join(os.path.dirname(dst), "old", "%s.%d.mp4" % (os.path.basename(dst)[:-4], int(time.time()))))
+        out = ""
+        for _ in range(3):                              # the same command again only looks it up; it does not resubmit
+            rc, out = cli(film, ["upscale", "--video", os.path.relpath(clip, film.project), "--to", "1080p", "--mode", "fast",
+                                 "--wait", "900", "--out", os.path.relpath(dst, film.project)], timeout=1000)
+            if os.path.isfile(dst) or ("running" not in out and "处理中" not in out):
+                break
+        if not os.path.isfile(dst):
+            print("  %s: the upscale did not come back: %s" % (sh["id"], (out.strip().splitlines() or ["no answer"])[-1][:160]))
+            continue
+        m = re.search(r"实扣\s*(\d+)", out)
+        credits = int(m.group(1)) if m else cost
+        st["upscaled"] = {"src": mark, "credits": credits}
+        st["credits"] += credits
+        film.state["spent"] += credits
+        film.save_state()
+        off = abs(seconds_of(dst) - seconds_of(clip))
+        print("  done, %d credits%s" % (credits, "" if off <= 0.15 else "; its length differs from the take by %.2f s, look at it" % off))
     return 0
 
 
@@ -981,8 +1124,9 @@ def build_plan(film, final, out_name=None):
             item["sfx"] = sfx
         items.append(item)
     card = d.get("end_card")
+    clips = ep + ("/" + UPSCALED if final and d.get("finish") == "sample_up" else "")   # the final cut of a sample_up film: the 1080p takes
     if card:
-        end = film.path("out", ep, "END.mp4")
+        end = film.path("out", clips, "END.mp4")
         if not os.path.isfile(end):
             subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=540x960:r=24:d=%s" % card.get("seconds", 2),
                             "-pix_fmt", "yuv420p", end])
@@ -991,7 +1135,7 @@ def build_plan(film, final, out_name=None):
     name = out_name or (ep + (".mp4" if final else ".draft.mp4"))
     plan = {"cues": "%s.cues.json" % ep, "output": "../out/" + name, "notice": d["notice"], "premise": d["premise"], "layout": "full",
             "loudness_lufs": -15, "premise_seconds": 7, "scoreboard_seconds": 4,      # locked: series/text-styles.json
-            "clips": "../out/%s" % ep, "srt": "srt", "sfx": sfx_dir, "items": items}
+            "clips": "../out/%s" % clips, "srt": "srt", "sfx": sfx_dir, "items": items}
     if missing_sfx:
         print("note: no sound file for %s in %s; the cut is made without %s" % (", ".join(missing_sfx), sfx_dir, "it" if len(missing_sfx) == 1 else "them"))
     os.makedirs(film.path("post"), exist_ok=True)
@@ -1001,6 +1145,10 @@ def build_plan(film, final, out_name=None):
 
 
 def cmd_compose(film, final, out_name):
+    if final and film.d.get("finish") == "sample_up":
+        missing = [sh["id"] for _, sh, _ in film.shots() if not os.path.isfile(upscaled_clip(film, sh))]
+        if missing:
+            die("the final cut uses the 1080p takes; not upscaled yet: %s (film.py upscale PROJECT --run)" % ", ".join(missing))
     for sc, sh, _ in film.shots():
         name = sh.get("take", sh["id"])
         if not os.path.isfile(clip_of(film, sh)):
@@ -1088,6 +1236,19 @@ def cover_sections(film):
     return {pieces[i]: pieces[i + 1] for i in range(0, len(pieces), 2)}
 
 
+def cover_prompt_file(film, sections):
+    """cover/<episode>.md as written, or, for an episode of a series with a look, a copy with the series look
+    put in front of each section, so the covers of a series share its look as the films do."""
+    look = (getattr(film, "series", None) or {}).get("look")
+    if not look:
+        return "cover/%s.md" % film.episode
+    path = film.path(".film", "cover", film.episode + ".md")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("".join("## %s\n\n整体视觉风格：%s。\n\n%s" % (name, look.rstrip("。"), body.lstrip("\n")) for name, body in sections.items()))
+    return os.path.relpath(path, film.project)
+
+
 def cmd_cover(film, run):
     """Covers are generated key art with the title set on it, never a frame of the cut (frame
     covers were tried and rejected). Prompts live in cover/<episode>.md, sections 3x4
@@ -1130,7 +1291,7 @@ def cmd_cover(film, run):
                 print("  stopping: the cover budget of %d would be passed" % cap)
                 break
             key = "cover/%s.%s.%s" % (ep, name, "abcdefgh"[n])
-            if not ensure_node(film, key, "image", "seedream_5.5", "cover/%s.md#%s" % (ep, name),
+            if not ensure_node(film, key, "image", "seedream_5.5", "%s#%s" % (cover_prompt_file(film, sections), name),
                                [("ratio", ratio), ("resolution", "2K")], refs):
                 continue
             ok, credits = run_node(film, key, "cover/", wait=240)
@@ -1216,7 +1377,8 @@ def cmd_doctor():
 
 # ------------------------------------------------------------------ intake
 BRANDS = "宾利 奔驰 宝马 劳斯莱斯 保时捷 法拉利 兰博基尼 特斯拉 茅台 五粮液 苹果 华为 微信 支付宝 高盛 摩根 劳力士 爱马仕 香奈儿 路易威登 腾讯 阿里".split()
-RISKY = "房卡 开房 做空 空单 出货 割韭菜 内幕 放消息 赌博 赌场 裸体 鲜血 自杀 毒品 吸毒 砍 枪".split()
+RISKY = ("房卡 开房 做空 空单 出货 割韭菜 内幕 放消息 赌博 赌场 裸体 鲜血 自杀 毒品 吸毒 砍 枪 "
+         "彩票 中奖 头奖 双色球 赌球 押注 下注 博彩 庄家 买球 赔率").split()     # the second row: classic time-travel payoffs the platform is touchy about
 
 
 def estimate_seconds(line_chars, scenes):
@@ -1304,7 +1466,8 @@ def cmd_intake(script_path, project, like=None, camera=None):
              "## 7. 成片规格和积分上限", "| 规格 | 做法 | 大约积分 |", "|---|---|---|",
              "| 720p（默认） | 直接按 720p 生成，合成时放大到 1080 | %d |" % round(PRICE["720p"] * seconds * 1.3),
              "| 480p | 样片直接合成，放大到 1080 | %d |" % round(PRICE["draft"] * seconds * 1.3),
-             "| 1080p | 先出样片，通过后逐条导出 | %d |" % round(PRICE["draft"] * seconds * 1.3 + PRICE["1080p"] * seconds), "",
+             "| 1080p | 先出样片，通过后逐条导出 | %d |" % round(PRICE["draft"] * seconds * 1.3 + PRICE["1080p"] * seconds),
+             "| 480p+超分 | 先出 480p 样片，看过通过的镜头再用即梦快速超分到 1080p | %d |" % round(PRICE["draft"] * seconds * 1.3 + PRICE["upscale"] * seconds), "",
              "按 30% 重做估的。不说就按 720p；给一个积分上限，到上限就停下来问。", "",
              "## 我要先看一眼的句子", "下面这些是脚本里没用冒号写明、或者没写清谁说的；我读稿后定，不用你管，除非我在上面问到。"]
     sheet += ["- " + u for u in unsure] or ["- 没有"]
@@ -1331,6 +1494,9 @@ def main():
 
     if cmd == "doctor":
         sys.exit(cmd_doctor())
+    if cmd == "series":
+        import series
+        sys.exit(series.main(rest))
     if cmd == "intake":
         like, camera = opt("--like"), opt("--camera")
         pos = [a for a in pos if a not in (like, camera)]
@@ -1378,6 +1544,8 @@ def main():
         rc = cmd_qc(film, only)
     elif cmd == "review":
         rc = cmd_review(film, pos[1], pos[2], pos[3] if len(pos) > 3 else "")
+    elif cmd == "upscale":
+        rc = cmd_upscale(film, "--run" in flags)
     elif cmd == "compose":
         rc = cmd_compose(film, "--final" in flags, opt("--out"))
     elif cmd == "preview":

@@ -22,6 +22,12 @@ Or, with only an idea:
 
 > Clone this repository and read `AGENTS.md`, then follow it. I don't have a script yet, only an idea: 「<your idea>」. Develop it with me first.
 
+Or with a run of scripts that should come out as one series:
+
+> Clone this repository and read `AGENTS.md`, then follow it. My scripts are in `<folder>` (E01.txt, E02.txt …). Make them as one series with one look ("A run of scripts" in `AGENTS.md`). Stop and show me every shot list and the run's price before generating anything.
+
+A series keeps its look in one file, `series.json`: the visual language every shot shares, the format, the protagonist's voice if it recurs, and one credit cap for the whole run. Every episode reads it, and `film.py series <folder> check` fails any episode that drifts from it.
+
 For more story work than this pipeline's first episode (every episode of a series, a script doctor's report with evidence, adapting a novel, or a script for some other format or video model), use the standalone [story agent](https://github.com/instl999/story-agent). Its `export --to pov` writes scripts this pipeline takes in at Step 1.
 
 Everything the agent needs is in three files and one example:

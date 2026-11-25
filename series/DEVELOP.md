@@ -65,6 +65,8 @@ python3 series/tools/film.py develop films/<series-name>
 
 prints what is filled, what is missing and what the whole series costs.
 
+For a series of separate films that share a premise (an anthology: "假如回到……", each with its own protagonist and era), write the series bible first, `story/SERIES.md` from `series/topic-template/SERIES.md`: the shape every episode keeps and what never changes. Each episode's setting and script are then held to it.
+
 ## 4. The setting: `story/setting.md`
 
 Write it in Chinese, in this order. Numbers in brackets are minimums.
@@ -190,8 +192,12 @@ Each episode is its own film folder beside `story/`:
 python3 series/tools/film.py intake films/<series-name>/story/E01.txt films/<series-name>/E01
 ```
 
-and from here follow `AGENTS.md` from Step 2. The decision sheet is mostly settled already, and the narration lines you wrote are listed on it. For E02 and later, take the look and the cast of the episode before, so people and places stay the same and their images are not made twice:
+and from here follow `AGENTS.md` from Step 2. The decision sheet is mostly settled already, and the narration lines you wrote are listed on it.
+
+With more than one episode, take them all in as one series instead, so they share one look and one cap (`AGENTS.md`, "A run of scripts"):
 
 ```bash
-python3 series/tools/film.py intake films/<series-name>/story/E02.txt films/<series-name>/E02 --like films/<series-name>/E01
+python3 series/tools/film.py series films/<series-name> intake
 ```
+
+For one story told across episodes set `"continuing": true` in `series.json`: each episode is then taken in from the one before, so people, places and their pictures stay the same and are not made twice.
